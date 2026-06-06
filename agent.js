@@ -491,11 +491,16 @@ STRICT RULES:
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return text.trim().replace(/^"/, '').replace(/"$/, '');
+    const greeting = text.trim().replace(/^"/, '').replace(/"$/, '');
+    return appendAuditSuggestions(greeting);
   } catch (err) {
     console.warn("Failed to generate Dino greeting dynamically:", err);
-    return "Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?";
+    return appendAuditSuggestions("Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?");
   }
+}
+
+function appendAuditSuggestions(greetingText) {
+  return `${greetingText}\n\nFeel free to ask me any open questions about this page, or get started with one of these audits:\n\n[🔍 Audit Accessibility](suggest:Audit the page for accessibility) [⚡ Audit Performance](suggest:Audit the page for performance) [🛡️ Audit Privacy & Security](suggest:Audit the page for privacy and security)`;
 }
 
 async function runDinoChatAgent(userMessage, chatHistory, onStatus) {

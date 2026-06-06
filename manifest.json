@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Modern Web Guidance Auditor",
+  "name": "Modern Web Dino",
   "version": "1.0.0",
   "description": "Evaluate modernization opportunities for any website using Gemini and the Modern Web Guidance database.",
   "devtools_page": "devtools.html",
@@ -16,5 +16,18 @@
   "background": {
     "service_worker": "background.js"
   },
-  "action": {}
+  "icons": {
+    "16": "dino-agent.png",
+    "32": "dino-agent.png",
+    "48": "dino-agent.png",
+    "128": "dino-agent.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "dino-agent.png",
+      "32": "dino-agent.png",
+      "48": "dino-agent.png",
+      "128": "dino-agent.png"
+    }
+  }
 }

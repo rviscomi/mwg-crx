@@ -1,4 +1,4 @@
 // Background Service Worker
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("Modern Web Guidance Auditor Extension Installed");
+  console.log("Modern Web Dino Extension Installed");
 });

@@ -206,17 +206,26 @@ async function onChatTabActive() {
   }
 
   if (hasInitializedChat) return;
+
+  try {
+    await loadConfig();
+  } catch (err) {
+    console.warn("Failed to load config for chat:", err);
+  }
+
   hasInitializedChat = true;
   
   const greetingEl = document.getElementById("initial-greeting");
   try {
      const greeting = await runDinoGreeting();
     renderDinoResponse(greeting, greetingEl);
+    addMessageActions(greetingEl, greeting);
     chatHistory = [{ role: "model", content: greeting }];
   } catch (err) {
     console.error("Failed to fetch Dino greeting:", err);
-    const fallback = "Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?";
-    greetingEl.textContent = fallback;
+    const fallback = "Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?\n\nFeel free to ask me any open questions about this page, or get started with one of these audits:\n\n[🔍 Audit Accessibility](suggest:Audit the page for accessibility) [⚡ Audit Performance](suggest:Audit the page for performance) [🛡️ Audit Privacy & Security](suggest:Audit the page for privacy and security)";
+    renderDinoResponse(fallback, greetingEl);
+    addMessageActions(greetingEl, fallback);
     chatHistory = [{ role: "model", content: fallback }];
   }
 }
@@ -240,6 +249,7 @@ function appendChatMessage(role, content, isTyping = false) {
       bubble.innerHTML = `<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
     } else {
       renderDinoResponse(content, bubble);
+      addMessageActions(bubble, content);
     }
   } else {
     msgDiv.className = "chat-message user";
@@ -347,6 +357,8 @@ async function handleSendChatMessage() {
       });
     }
 
+    addMessageActions(modelMsgBubble, response);
+
     const chatMessages = document.getElementById("chat-messages");
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -431,3 +443,54 @@ chrome.runtime.onMessage.addListener((message) => {
     }
   }
 });
+
+function addMessageActions(bubble, rawContent) {
+  // If actions already exist, don't re-add them
+  if (bubble.querySelector(".message-actions")) return;
+
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "message-actions";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "btn-copy-msg";
+  copyBtn.title = "Copy response to clipboard";
+  copyBtn.innerHTML = `
+    <svg class="copy-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+    <span>Copy</span>
+  `;
+
+  copyBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(rawContent);
+      
+      const span = copyBtn.querySelector("span");
+      const originalText = span.textContent;
+      span.textContent = "Copied!";
+      copyBtn.classList.add("copied");
+      
+      const svg = copyBtn.querySelector(".copy-icon");
+      const originalSvg = svg.innerHTML;
+      svg.innerHTML = `
+        <polyline points="20 6 9 17 4 12"></polyline>
+      `;
+
+      setTimeout(() => {
+        span.textContent = originalText;
+        copyBtn.classList.remove("copied");
+        svg.innerHTML = originalSvg;
+      }, 2000);
+      
+      showToast("Response copied to clipboard!", "success");
+    } catch (err) {
+      showToast("Failed to copy message: " + err.message, "error");
+    }
+  });
+
+  actionsDiv.appendChild(copyBtn);
+  bubble.appendChild(actionsDiv);
+}

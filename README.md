@@ -1,6 +1,6 @@
-# MWG Modernizer — Chrome DevTools Extension
+# Modern Web Dino — Chrome DevTools Extension
 
-**MWG Modernizer** is a Chrome Developer Tools extension designed to help web developers identify and implement modernization opportunities on any website. 
+**Modern Web Dino** is a Chrome Developer Tools extension designed to help web developers identify and implement modernization opportunities on any website. 
 
 It inspects the page DOM, layout styles, and console logs, and uses **Google Gemini** (via direct client-side API calls) combined with the Chrome team's **Modern Web Guidance (MWG)** database to suggest modern replacements for legacy code.
 
@@ -39,7 +39,7 @@ The extension uses an **Agentic Tool-Calling** flow to drive the audit process:
 
 ### 2. Configure Gemini API Key
 1. Open Chrome DevTools on any webpage (Right-click -> **Inspect**, or press `F12`).
-2. Select the **Modernize** tab in the DevTools panel header.
+2. Select the **Dino** tab in the DevTools panel header.
 3. Click the **Settings** sub-tab.
 4. Paste your **Gemini API Key** (get one from [Google AI Studio](https://aistudio.google.com/)).
 5. Select the model (default: `gemini-3.5-flash` for fast, cost-efficient audits).
@@ -50,14 +50,14 @@ The extension uses an **Agentic Tool-Calling** flow to drive the audit process:
 ## 📖 How to Use
 
 ### 🔍 Full Page Audit
-1. Open the **Page Audit** tab in the Modernize panel.
+1. Open the **Page Audit** tab in the Dino panel.
 2. Click **Start Page Audit**.
 3. Watch the progress logger stream events (e.g. `"Scanning DOM..."`, `"Searching guides..."`, `"Analyzing..."`).
 4. Review the generated list of modernization cards. Click on any card to see a description, computed impact badge, and a side-by-side code diff.
 
 ### 🎯 Selected Element Inspector
 1. Go to the DevTools **Elements** tab and select any element (e.g. a custom popup container or scrollable div).
-2. Open the **Element Inspector** tab in the Modernize panel.
+2. Open the **Element Inspector** tab in the Dino panel.
 3. Click **Analyze Selected Element**.
 4. The agent will inspect the outerHTML and styles of your selected element, match it against the guidance, and return specific component-level recommendations.
 

@@ -16,7 +16,19 @@ function renderOpportunities(container, list) {
     return;
   }
 
-  list.forEach((opp, index) => {
+  const impactWeights = {
+    high: 3,
+    medium: 2,
+    low: 1
+  };
+
+  const sortedList = [...list].sort((a, b) => {
+    const weightA = impactWeights[a.impact?.toLowerCase()] || 0;
+    const weightB = impactWeights[b.impact?.toLowerCase()] || 0;
+    return weightB - weightA;
+  });
+
+  sortedList.forEach((opp, index) => {
     const card = document.createElement("div");
     card.className = "opp-card";
     card.dataset.oppIndex = index;

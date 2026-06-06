@@ -1,9 +1,9 @@
-// Create the Modernize panel
+// Create the Dino panel
 chrome.devtools.panels.create(
-  "Modernize",
-  null, // icon
+  "Dino",
+  "dino-agent.png",
   "panel.html",
   (panel) => {
-    console.log("Modernize DevTools Panel Created");
+    console.log("Dino DevTools Panel Created");
   }
 );

@@ -1,20 +1,20 @@
 # Chrome Web Store Listing Metadata & Policies
 
-This document compiles the store metadata, permission justifications, and privacy declarations required to publish the **MWG Modernizer** extension.
+This document compiles the store metadata, permission justifications, and privacy declarations required to publish the **Modern Web Dino** extension.
 
 ---
 
 ## 📝 Store Listing Metadata
 
 ### Extension Name
-`MWG Modernizer`
+`Modern Web Dino`
 
 ### Single-sentence Summary
 `Evaluate website modernization opportunities in DevTools using Google Gemini and Modern Web Guidance.`
 
 ### Detailed Description
 ```
-MWG Modernizer is a developer productivity tool that integrates directly into Chrome DevTools to help frontend developers modernize their websites.
+Modern Web Dino is a developer productivity tool that integrates directly into Chrome DevTools to help frontend developers modernize their websites.
 
 By combining the power of Google Gemini models with the Chrome team's official Modern Web Guidance (MWG) repository, this extension automatically audits your pages and recommends native modern replacements for legacy code.
 
