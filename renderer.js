@@ -26,6 +26,20 @@ function renderOpportunities(container, list) {
     else if (opp.useCaseId?.includes("dialog") || opp.useCaseId?.includes("popover")) icon = "🖼️";
     else if (opp.useCaseId?.includes("passkey")) icon = "🔑";
 
+    const targetLower = (opp.target || "").toLowerCase();
+    const isNetwork = targetLower === "network" || 
+                      targetLower.includes("set-cookie") || 
+                      targetLower.includes("http header") ||
+                      targetLower.includes("network panel") ||
+                      targetLower.includes("cookie script");
+
+    let targetHtml = `<code>document</code>`;
+    if (isNetwork) {
+      targetHtml = `<code>Network Panel</code>`;
+    } else if (opp.target && opp.target !== "document") {
+      targetHtml = `<a class="target-link-btn" href="#" data-target="${escapeHtml(opp.target)}"><code>${escapeHtml(opp.target)}</code></a>`;
+    }
+
     card.innerHTML = `
       <div class="opp-header">
         <div class="opp-title-group">
@@ -39,8 +53,8 @@ function renderOpportunities(container, list) {
         <p class="opp-description">${escapeHtml(opp.description)}</p>
         
         <div class="opp-meta-row">
-          <span>Target Element: ${opp.target && opp.target !== "document" ? `<a class="target-link-btn" href="#" data-target="${escapeHtml(opp.target)}"><code>${escapeHtml(opp.target)}</code></a>` : `<code>document</code>`}</span>
-          ${opp.useCaseId ? `<span>Guide ID: <a class="guide-link-btn" href="#" data-guide="${opp.useCaseId}">${opp.useCaseId} ↗</a></span>` : ""}
+          <span>Target: ${targetHtml}</span>
+          ${opp.useCaseId ? `<span>Guide ID: <a class="guide-link-btn" href="#" data-guide="${opp.useCaseId}" data-anchor="${escapeHtml(opp.guideAnchor || '')}">${opp.useCaseId} ↗</a></span>` : `<span>Source: Gemini training data</span>`}
         </div>
 
         ${opp.originalCode || opp.modernizedCode ? `
@@ -73,8 +87,9 @@ function renderOpportunities(container, list) {
         e.stopPropagation();
         try {
           const category = useCasesCache.find(u => u.id === link.dataset.guide)?.category || "user-experience";
+          const anchor = link.dataset.anchor ? `#${link.dataset.anchor}` : "";
           // Direct developers to GitHub directly for readable rendering
-          const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${link.dataset.guide}.md`;
+          const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${link.dataset.guide}.md${anchor}`;
           chrome.tabs.create({ url });
           showToast(`Opening GitHub guide for ${link.dataset.guide}...`, "success");
         } catch (err) {
@@ -82,6 +97,8 @@ function renderOpportunities(container, list) {
         }
       });
     }
+
+
 
     const targetLink = card.querySelector(".target-link-btn");
     if (targetLink && targetLink.dataset.target) {
@@ -91,15 +108,22 @@ function renderOpportunities(container, list) {
         const selector = targetLink.dataset.target;
         chrome.devtools.inspectedWindow.eval(
           `(() => {
-            const el = document.querySelector(${JSON.stringify(selector)});
-            if (el) {
-              inspect(el);
-              return true;
+            const selector = ${JSON.stringify(selector)};
+            try {
+              const el = document.querySelector(selector);
+              if (el) {
+                inspect(el);
+                return { found: true };
+              }
+              return { found: false };
+            } catch (e) {
+              return { error: e.message };
             }
-            return false;
           })()`,
           (result, isException) => {
-            if (isException || !result) {
+            if (isException || (result && result.error)) {
+              showToast(`This target is a descriptive label: "${selector}"`, "info");
+            } else if (result && !result.found) {
               showToast(`Could not find element matching "${selector}" on active page.`, "warning");
             } else {
               showToast(`Revealed "${selector}" in Elements panel!`, "success");

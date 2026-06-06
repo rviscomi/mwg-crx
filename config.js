@@ -17,6 +17,11 @@ async function loadConfig() {
     document.getElementById("settings-model").value = data.model;
   }
   if (data.baseUrl) {
+    // Migrate legacy raw GitHub baseUrl to the Worker API URL
+    if (data.baseUrl.includes("raw.githubusercontent.com")) {
+      data.baseUrl = "https://mwg-cf.rviscomi-555.workers.dev/";
+      await chrome.storage.local.set({ baseUrl: data.baseUrl });
+    }
     config.baseUrl = data.baseUrl;
     document.getElementById("settings-url").value = data.baseUrl;
   }

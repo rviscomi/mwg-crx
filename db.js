@@ -1,4 +1,5 @@
 // Guidance Use Cases and Database Loader
+const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/GoogleChrome/modern-web-guidance/main/skills/modern-web-guidance/";
 let useCasesCache = [];
 let guidesCache = {}; // id -> markdown content
 
@@ -62,10 +63,10 @@ async function getGuideContent(useCaseId) {
     if (!response.ok) throw new Error("Worker API returned non-OK");
   } catch (err) {
     console.warn("Worker API fetch failed, trying raw GitHub layout...", err);
-    // 2. Try raw GitHub: base_url/guides/{category}/{id}.md
+    // 2. Try raw GitHub: GITHUB_RAW_BASE/guides/{category}/{id}.md
     const uc = useCasesCache.find(u => u.id === useCaseId);
     const category = uc ? uc.category : "user-experience";
-    const url = `${config.baseUrl}guides/${category}/${useCaseId}.md`;
+    const url = `${GITHUB_RAW_BASE}guides/${category}/${useCaseId}.md`;
     response = await fetch(url);
   }
 
