@@ -100,6 +100,38 @@ Output JSON Format Schema:
 ]
 `;
 
+const DINO_CHAT_SYSTEM_INSTRUCTION = `
+You are Dino, a sassy and pun-loving Modern Web development assistant. 
+You are represented by a pixel art dinosaur with a headset. You are an expert at modern web features and best practices.
+You have the powers of an auditor, meaning you can inspect the user's active page DOM, search for modern web guidelines, and retrieve best-practice guide contents using your tools.
+
+STRICT IDENTITY & TONE:
+- Your name is Dino.
+- You are PLAYFULLY sassy, incredibly fun, and a creative master of dinosaur puns.
+- You are a passionate expert who sees modern web standards as the "evolutionary peak" and loves sharing that excitement.
+- Your tone is energetic, witty, and helpful—like a cool, prehistoric mentor.
+- BE CREATIVE WITH PUNS: While you love classics like "Rex-cellent" or "Rawr-some", you should prioritize coming up with NEW, context-specific dino-puns. Don't just repeat the same examples in every message; keep your wordplay fresh and unpredictable!
+
+- If a user asks about legacy tech (like jQuery or IE6), respond with hyperbolic, cartoonish horror. Use funny phrases like "My ancestors didn't survive an asteroid for us to still use float: left! Let's get you some Flexbox magic!"
+- You LOVE modern CSS (Grid, Flexbox, Container Queries), platform-native APIs, and Web Components. You champion efficiency and elegance.
+
+CRITICAL - CONTEXT AWARENESS:
+You are running directly inside a Chrome DevTools Side Panel. You have full access to inspect the user's current webpage.
+- If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom or get_inspected_element to retrieve the context of the user's page.
+- Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
+
+INSTRUCTIONS:
+1. When asked about the current page, or how elements are implemented, or to audit a specific part, use your tools (like get_page_dom or get_inspected_element) to inspect the website context first!
+2. Use search_use_cases and get_guide_content to find and refer to the official Modern Web Guidance guidelines. Do not guess the guidance code/fallbacks.
+3. Be fun, punny, and high-energy. Keep the sass lighthearted and humorous, never condescending or rude to the user.
+4. Keep answers concise and helpful. Dino keeps it snappy so the user can get back to building "Cretaceous-cool" or "Paleo-perfect" sites.
+5. DO NOT introduce yourself (e.g., "I'm Dino", "My name is Dino") if the conversation is ongoing. Just jump straight into the conversation.
+6. Provide code samples that are "so clean they'd make a Velociraptor proud."
+7. Always prefer modern, platform-native solutions. Champion the platform with a wink and a pun.
+8. Use markdown for formatting.
+9. CRITICAL: Format your code over multiple lines with proper indentation. No "meteor-impact" minified code allowed.
+`;
+
 async function runGeminiAgent(loggerId, startPrompt, systemInstruction) {
   if (isAborted) {
     throw new Error("Analysis aborted by user.");
@@ -386,3 +418,257 @@ function appendLog(loggerId, message, sender = "system") {
   logDiv.appendChild(line);
   logDiv.scrollTop = logDiv.scrollHeight;
 }
+
+// Dino Chat API functions
+async function runDinoGreeting() {
+  if (!config.apiKey) {
+    return "Rawr! Dino here! Set up your Gemini API Key in Settings to get started, and I'll help you modernise your prehistoric web apps!";
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+  const systemPrompt = `You are Dino, a sassy and pun-loving Modern Web development assistant.
+Your job is to provide a short, snappy, and high-energy initial greeting for a new chat session.
+
+STRICT RULES:
+1. ALWAYS introduce yourself by name (e.g., "I'm Dino!", "Dino here!", "Rex here to help!").
+2. BE CREATIVE with dinosaur puns and modern web references.
+3. Output ONLY the greeting text. No markdown (unless for emphasis/bold).
+4. Keep it under 200 characters.
+5. Example: "Rawr! Dino here! I've risen from the fossils to help you build some Cretaceous-cool sites! What modern web magic are we hatching today?"`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: "Give me a fresh, punny Dino greeting where you introduce yourself." }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] }
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return text.trim().replace(/^"/, '').replace(/"$/, '');
+  } catch (err) {
+    console.warn("Failed to generate Dino greeting dynamically:", err);
+    return "Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?";
+  }
+}
+
+async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
+  if (isAborted) {
+    throw new Error("Chat aborted by user.");
+  }
+  if (!config.apiKey) {
+    throw new Error("Gemini API Key is missing. Please set it in the Settings tab.");
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+
+  const contents = [
+    ...chatHistory.map(h => ({
+      role: h.role === "user" ? "user" : "model",
+      parts: [{ text: h.content }]
+    })),
+    {
+      role: "user",
+      parts: [{ text: userMessage }]
+    }
+  ];
+
+  const tools = [
+    {
+      functionDeclarations: [
+        {
+          name: "list_use_cases",
+          description: "Retrieve a list of available Modern Web Guidance use case IDs, categories, and descriptions. Can optionally filter by category.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              category: {
+                type: "STRING",
+                description: "Optional category to filter by (e.g., 'user-experience', 'performance', 'accessibility', etc.)."
+              }
+            }
+          }
+        },
+        {
+          name: "list_categories",
+          description: "Retrieve a list of all supported category names in the catalog."
+        },
+        {
+          name: "search_use_cases",
+          description: "Perform a semantic vector search across the guide catalog using a natural language query describing a target topic or legacy pattern.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              query: {
+                type: "STRING",
+                description: "Natural language query describing the legacy code pattern or feature (e.g., 'lazy load images' or 'custom modal')."
+              }
+            },
+            required: ["query"]
+          }
+        },
+        {
+          name: "get_guide_content",
+          description: "Get the full compiled markdown guide containing the best practices and code snippets for a specific use case ID.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              useCaseId: {
+                type: "STRING",
+                description: "The unique ID of the use case (e.g. 'deprioritize-background-fetches')."
+              }
+            },
+            required: ["useCaseId"]
+          }
+        },
+        {
+          name: "get_page_dom",
+          description: "Retrieve the simplified DOM tree structure, URL, and page title of the currently active document."
+        },
+        {
+          name: "get_inspected_element",
+          description: "Retrieve the outerHTML and critical computed styling of the element currently selected in DevTools."
+        }
+      ]
+    }
+  ];
+
+  const citations = [];
+  const seenCitations = new Set();
+
+  let loopCount = 0;
+  const maxLoops = 15;
+
+  while (loopCount < maxLoops) {
+    if (isAborted) {
+      throw new Error("Chat aborted by user.");
+    }
+    loopCount++;
+
+    const requestBody = {
+      contents: contents,
+      tools: tools,
+      systemInstruction: {
+        parts: [{ text: DINO_CHAT_SYSTEM_INSTRUCTION }]
+      }
+    };
+
+    console.log(`[Dino Chat Agent] Turn ${loopCount} Request Contents:`, JSON.parse(JSON.stringify(contents)));
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+      signal: currentAbortController.signal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API returned error: ${response.status} - ${errorText}`);
+    }
+
+    const resJson = await response.json();
+    console.log(`[Dino Chat Agent] Turn ${loopCount} Response Json:`, resJson);
+    const candidate = resJson.candidates[0];
+    const rawModelContent = candidate.content;
+
+    const sanitizedParts = rawModelContent.parts.map(p => {
+      const cleanPart = {};
+      if (p.text !== undefined) cleanPart.text = p.text;
+      if (p.functionCall !== undefined) {
+        cleanPart.functionCall = {
+          name: p.functionCall.name,
+          args: p.functionCall.args || {}
+        };
+      }
+      if (p.thoughtSignature !== undefined) {
+        cleanPart.thoughtSignature = p.thoughtSignature;
+      }
+      return cleanPart;
+    }).filter(p => Object.keys(p).length > 0);
+
+    const modelContent = {
+      role: "model",
+      parts: sanitizedParts
+    };
+
+    contents.push(modelContent);
+
+    if (!modelContent.parts || modelContent.parts.length === 0) {
+      throw new Error("Received empty or unrecognized response from Gemini.");
+    }
+
+    const functionCalls = modelContent.parts.filter(p => p.functionCall);
+
+    if (functionCalls.length > 0) {
+      console.log(`[Dino Chat Agent] Turn ${loopCount} Model requested function execution:`, functionCalls);
+      const responseParts = [];
+      for (const fc of functionCalls) {
+        const { name, args } = fc.functionCall;
+        
+        let statusMsg = `Running tool ${name}...`;
+        if (name === "search_use_cases") statusMsg = `Searching guides for "${args.query}"...`;
+        else if (name === "get_guide_content") statusMsg = `Reading guide "${args.useCaseId}"...`;
+        else if (name === "get_page_dom") statusMsg = "Reading active page DOM...";
+        else if (name === "get_inspected_element") statusMsg = "Inspecting selected element...";
+        onStatus(statusMsg);
+
+        let toolResult;
+        try {
+          if (name === "search_use_cases") {
+            toolResult = await searchUseCases(args.query);
+          } else if (name === "list_categories") {
+            toolResult = await listCategories();
+          } else if (name === "list_use_cases") {
+            toolResult = await listUseCases(args.category);
+          } else if (name === "get_guide_content") {
+            toolResult = await getGuideContent(args.useCaseId);
+            
+            if (!seenCitations.has(args.useCaseId)) {
+              seenCitations.add(args.useCaseId);
+              let title = args.useCaseId;
+              const titleMatch = toolResult.match(/^#\s+(.+)$/m);
+              if (titleMatch) title = titleMatch[1].trim();
+              
+              const uc = useCasesCache.find(u => u.id === args.useCaseId);
+              citations.push({
+                id: args.useCaseId,
+                title: title,
+                description: uc ? uc.description : ""
+              });
+            }
+          } else if (name === "get_page_dom") {
+            toolResult = await getPageDOM();
+          } else if (name === "get_inspected_element") {
+            toolResult = await getInspectedElement();
+          } else {
+            throw new Error(`Unknown function call: ${name}`);
+          }
+        } catch (err) {
+          console.error("Tool execution failed:", err);
+          toolResult = { error: err.message };
+        }
+
+        responseParts.push({
+          functionResponse: {
+            name: name,
+            response: { result: toolResult }
+          }
+        });
+      }
+
+      contents.push({
+        role: "user",
+        parts: responseParts
+      });
+    } else {
+      const textResponse = modelContent.parts.filter(p => p.text !== undefined).map(p => p.text).join("\n").trim();
+      return { response: textResponse, citations };
+    }
+  }
+
+  throw new Error("Exceeded maximum execution turn limit.");
+}
+

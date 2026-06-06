@@ -7,7 +7,8 @@
   "permissions": [
     "tabs",
     "scripting",
-    "storage"
+    "storage",
+    "audioCapture"
   ],
   "host_permissions": [
     "<all_urls>"

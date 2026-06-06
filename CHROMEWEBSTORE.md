@@ -41,7 +41,10 @@ These justifications must be submitted to the Chrome Web Store review team to ex
 ### 3. `tabs`
 - **Justification**: Required to query the active tab's properties (such as the URL and title) to perform the audit, and to programmatically open the guidance pages on GitHub in a new browser tab.
 
-### 4. `<all_urls>` (Host Permissions)
+### 4. `audioCapture`
+- **Justification**: Required to access the microphone for transcribing voice messages inside the "Ask Dino" interactive modernization chat panel.
+
+### 5. `<all_urls>` (Host Permissions)
 - **Justification**: Required to allow developers to summon the auditor panel and run modernization scans on any production domain they are currently inspecting.
 
 ---

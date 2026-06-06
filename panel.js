@@ -1,6 +1,10 @@
+// Global drawer variables
+let drawer, openBtn, scroller, sheet;
+
 // Main DevTools Panel Controller
 document.addEventListener("DOMContentLoaded", async () => {
   setupTabs();
+  setupDrawer();
   await loadConfig();
   await loadUseCases();
   bindUIEvents();
@@ -19,8 +23,101 @@ function setupTabs() {
       tab.classList.add("active");
       const targetView = document.getElementById(`view-${tab.dataset.tab}`);
       if (targetView) targetView.classList.add("active");
+
+      // Close the drawer automatically when a tab is selected
+      if (drawer) {
+        closeDrawer();
+      }
     });
   });
+}
+
+// Setup the Navigation Drawer
+function setupDrawer() {
+  drawer = document.getElementById("sidebar-drawer");
+  openBtn = document.getElementById("btn-open-sidebar");
+  scroller = drawer.querySelector(".Drawer-scroller");
+  sheet = drawer.querySelector(".sidebar");
+
+  // Treat "any pixel of the sheet visible inside the popover root" as open/not closed.
+  const visibleThreshold = 1 / window.innerWidth;
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const entry = entries.at(-1);
+      if (entry.intersectionRatio < visibleThreshold) {
+        onDrawerClosed();
+      }
+      if (entry.intersectionRatio === 1) {
+        onDrawerOpened();
+      }
+    },
+    { root: drawer, threshold: [visibleThreshold, 1] }
+  );
+  observer.observe(sheet);
+
+  // Open trigger
+  openBtn.addEventListener("click", openDrawer);
+
+  // Light-dismiss: click outside the sheet (on the dimmed backdrop/spacer area) closes the drawer
+  drawer.addEventListener("click", (event) => {
+    if (!sheet.contains(event.target)) {
+      closeDrawer();
+    }
+  });
+
+  // Escape key dismissal
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && drawer.matches && drawer.matches(":popover-open")) {
+      closeDrawer();
+    }
+  });
+
+  // Scroll-driven animation fallback (for Firefox/older engines without CSS scroll timelines)
+  if (!CSS.supports("animation-timeline: scroll()")) {
+    scroller.addEventListener("scroll", () => {
+      const ratio = 1 - scroller.scrollLeft / sheet.offsetWidth;
+      drawer.style.setProperty("--drawer-backdrop", ratio);
+    });
+  }
+}
+
+async function openDrawer() {
+  // Show popover first
+  drawer.showPopover();
+
+  // Fallback for scroll-initial-target support
+  if (!CSS.supports("scroll-initial-target", "nearest")) {
+    scroller.scrollTo({ left: scroller.offsetWidth, behavior: "instant" });
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }
+
+  // Smoothly scroll the sheet into view
+  scroller.scrollTo({ left: 0, behavior: "auto" });
+}
+
+function closeDrawer() {
+  if (drawer && drawer.matches && !drawer.matches(":popover-open")) return;
+  // Scroll back to the spacer stop (closed)
+  scroller.scrollTo({ left: scroller.offsetWidth, behavior: "auto" });
+}
+
+function onDrawerOpened() {
+  const workspace = document.querySelector(".workspace");
+  if (workspace) workspace.inert = true;
+  if (openBtn) {
+    openBtn.setAttribute("aria-expanded", "true");
+  }
+  if (sheet) sheet.focus();
+}
+
+function onDrawerClosed() {
+  if (drawer) drawer.hidePopover();
+  const workspace = document.querySelector(".workspace");
+  if (workspace) workspace.inert = false;
+  if (openBtn) {
+    openBtn.setAttribute("aria-expanded", "false");
+  }
 }
 
 // Bind UI Click Handlers

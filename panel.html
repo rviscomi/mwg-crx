@@ -6,33 +6,56 @@
   </head>
   <body class="dark-theme">
     <div class="app-container">
-      <!-- Sidebar / Navigation -->
-      <nav class="sidebar">
-        <div class="logo">
-          <span class="icon">✨</span>
-          <span class="title">MWG Modernizer</span>
+      <!-- Drawer Popover -->
+      <div class="Drawer" id="sidebar-drawer" popover="manual">
+        <div class="Drawer-scroller">
+          <!-- Sidebar / Navigation -->
+          <nav class="sidebar Drawer-sheet" tabindex="-1">
+            <div class="logo">
+              <span class="icon">✨</span>
+              <span class="title">MWG Modernizer</span>
+            </div>
+            <ul class="nav-tabs">
+              <li class="tab-item active" data-tab="audit">
+                <span class="nav-icon">🔍</span> Page Audit
+              </li>
+              <li class="tab-item" data-tab="inspect">
+                <span class="nav-icon">🎯</span> Element Inspector
+              </li>
+              <li class="tab-item" data-tab="interactive">
+                <span class="nav-icon">💬</span> Interactive Audit
+              </li>
+              <li class="tab-item" data-tab="chat">
+                <span class="nav-icon">🦖</span> Ask Dino
+              </li>
+              <li class="tab-item" data-tab="settings">
+                <span class="nav-icon">⚙️</span> Settings
+              </li>
+            </ul>
+            <div class="sidebar-footer">
+              <span class="status-badge offline" id="db-status">DB: Loading...</span>
+            </div>
+          </nav>
         </div>
-        <ul class="nav-tabs">
-          <li class="tab-item active" data-tab="audit">
-            <span class="nav-icon">🔍</span> Page Audit
-          </li>
-          <li class="tab-item" data-tab="inspect">
-            <span class="nav-icon">🎯</span> Element Inspector
-          </li>
-          <li class="tab-item" data-tab="interactive">
-            <span class="nav-icon">💬</span> Interactive Audit
-          </li>
-          <li class="tab-item" data-tab="settings">
-            <span class="nav-icon">⚙️</span> Settings
-          </li>
-        </ul>
-        <div class="sidebar-footer">
-          <span class="status-badge offline" id="db-status">DB: Loading...</span>
-        </div>
-      </nav>
+      </div>
 
       <!-- Main Workspace -->
       <main class="workspace">
+        <!-- Workspace Global Navigation Bar -->
+        <header class="workspace-nav-bar">
+          <button id="btn-open-sidebar" class="btn-sidebar-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar-drawer">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div class="workspace-brand">
+            <span class="icon">✨</span>
+            <span class="brand-title">MWG Modernizer</span>
+          </div>
+        </header>
+
         <!-- Audit View -->
         <section id="view-audit" class="tab-view active">
           <header class="view-header">
@@ -115,6 +138,55 @@
           </div>
         </section>
 
+        <!-- Chat View -->
+        <section id="view-chat" class="tab-view">
+          <header class="view-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h2>Ask Dino</h2>
+              <div style="width: 32px; height: 32px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); background-color: var(--bg-secondary);">
+                <img src="dino-agent.png" alt="Dino" style="width: 100%; height: 100%; object-fit: cover; object-position: -5px 7px; transform: scale(2.8); image-rendering: pixelated;">
+              </div>
+            </div>
+            <p class="description">Get help modernizing your web apps away from prehistoric patterns</p>
+          </header>
+          
+          <div class="chat-container">
+            <div class="chat-messages" id="chat-messages">
+              <div class="chat-message with-avatar model">
+                <div class="message-avatar">
+                  <img src="dino-agent.png" alt="Dino">
+                </div>
+                <div class="message-bubble" id="initial-greeting">
+                  <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="chat-input-area">
+              <textarea id="chat-input" class="chat-input" placeholder="Ask about tooltips, carousels, scroll animations..." rows="1"></textarea>
+              <button id="mic-btn" class="btn btn-secondary btn-mic" title="Dictate a message with your voice" style="width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+              </button>
+              <button id="send-btn" class="btn btn-primary btn-send">
+                <span>Send</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
         <!-- Settings View -->
         <section id="view-settings" class="tab-view">
           <header class="view-header">
@@ -159,6 +231,7 @@
         </section>
       </main>
     </div>
+    <script src="marked.min.js"></script>
     <script src="config.js"></script>
     <script src="toast.js"></script>
     <script src="db.js"></script>
@@ -166,5 +239,6 @@
     <script src="renderer.js"></script>
     <script src="agent.js"></script>
     <script src="panel.js"></script>
+    <script src="chat.js"></script>
   </body>
 </html>
