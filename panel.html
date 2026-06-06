@@ -19,6 +19,9 @@
           <li class="tab-item" data-tab="inspect">
             <span class="nav-icon">🎯</span> Element Inspector
           </li>
+          <li class="tab-item" data-tab="interactive">
+            <span class="nav-icon">💬</span> Interactive Audit
+          </li>
           <li class="tab-item" data-tab="settings">
             <span class="nav-icon">⚙️</span> Settings
           </li>
@@ -37,6 +40,15 @@
             <p class="description">Analyze the active document for layout, style, and API modernization opportunities.</p>
           </header>
           <div class="control-row">
+            <div class="form-group inline-group">
+              <label for="audit-type">Audit Focus</label>
+              <select id="audit-type">
+                <option value="full" selected>Full Audit (All categories)</option>
+                <option value="accessibility">Accessibility only</option>
+                <option value="performance">Performance only</option>
+                <option value="security-privacy">Security & Privacy only</option>
+              </select>
+            </div>
             <button id="btn-run-audit" class="btn btn-primary">Start Page Audit</button>
             <button id="btn-stop-audit" class="btn btn-danger hidden">Stop Audit</button>
           </div>
@@ -75,6 +87,31 @@
           </div>
           <div class="results-container hidden" id="inspect-results">
             <!-- Dynamic inspector opportunity -->
+          </div>
+        </section>
+
+        <!-- Interactive Audit View -->
+        <section id="view-interactive" class="tab-view">
+          <header class="view-header">
+            <h2>Targeted Interactive Audit</h2>
+            <p class="description">Instruct the agent to search for specific elements or features on the page (e.g. "check how our images are loaded" or "modernize our modal popup overlay").</p>
+          </header>
+          <div class="interactive-form-row">
+            <textarea id="interactive-query" placeholder="E.g., Check how modals are implemented on this page and recommend improvements." rows="3"></textarea>
+          </div>
+          <div class="control-row">
+            <button id="btn-run-interactive" class="btn btn-primary">Run Custom Audit</button>
+            <button id="btn-stop-interactive" class="btn btn-danger hidden">Stop Audit</button>
+          </div>
+          <div class="status-logger hidden" id="interactive-logger">
+            <div class="logger-header">
+              <span class="spinner"></span>
+              <span class="logger-status-text">Analyzing page elements...</span>
+            </div>
+            <div class="logger-content" id="interactive-log-lines"></div>
+          </div>
+          <div class="results-container hidden" id="interactive-results">
+            <!-- Dynamic opportunities list -->
           </div>
         </section>
 
@@ -122,6 +159,12 @@
         </section>
       </main>
     </div>
+    <script src="config.js"></script>
+    <script src="toast.js"></script>
+    <script src="db.js"></script>
+    <script src="dom.js"></script>
+    <script src="renderer.js"></script>
+    <script src="agent.js"></script>
     <script src="panel.js"></script>
   </body>
 </html>
