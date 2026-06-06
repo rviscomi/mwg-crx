@@ -67,3 +67,64 @@ function getInspectedElement() {
     );
   });
 }
+
+async function highlightElementOnPage(selector) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (sel) => {
+        let overlay = document.getElementById("mwg-inspect-overlay");
+        if (!overlay) {
+          overlay = document.createElement("div");
+          overlay.id = "mwg-inspect-overlay";
+          overlay.style.position = "fixed";
+          overlay.style.pointerEvents = "none";
+          overlay.style.zIndex = "2147483647";
+          overlay.style.backgroundColor = "rgba(56, 189, 248, 0.25)";
+          overlay.style.border = "1px dashed #38bdf8";
+          overlay.style.transition = "all 0.1s ease-out";
+          document.body.appendChild(overlay);
+        }
+        
+        try {
+          const el = document.querySelector(sel);
+          if (el) {
+            const rect = el.getBoundingClientRect();
+            overlay.style.left = rect.left + "px";
+            overlay.style.top = rect.top + "px";
+            overlay.style.width = rect.width + "px";
+            overlay.style.height = rect.height + "px";
+            overlay.style.display = "block";
+          } else {
+            overlay.style.display = "none";
+          }
+        } catch (e) {
+          overlay.style.display = "none";
+        }
+      },
+      args: [selector]
+    });
+  } catch (err) {
+    console.error("Failed to highlight element:", err);
+  }
+}
+
+async function removeHighlightFromPage() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const overlay = document.getElementById("mwg-inspect-overlay");
+        if (overlay) {
+          overlay.style.display = "none";
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Failed to remove highlight:", err);
+  }
+}

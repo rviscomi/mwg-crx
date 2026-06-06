@@ -4,10 +4,170 @@ let isChatGenerating = false;
 let isListening = false;
 let voiceWindowId = null;
 
+// Highlight function for marked
+function highlightCode(code, lang) {
+  if (!code) return "";
+  
+  // Normalize code token/object to string if passed by marked as object
+  if (code && typeof code === "object") {
+    code = code.text || code.code || String(code);
+  }
+  if (typeof code !== "string") {
+    code = String(code);
+  }
+
+  lang = (lang || "").toLowerCase();
+
+  // Escape HTML first
+  let escaped = code
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  if (lang === "html" || lang === "xml") {
+    // Highlight tag blocks
+    escaped = escaped.replace(/(&lt;[\s\S]*?&gt;)/g, (tag) => {
+      let highlightedTag = tag;
+      highlightedTag = highlightedTag.replace(/(&quot;[\s\S]*?&quot;|'[^']*')/g, '<span class="hl-string">$1</span>');
+      highlightedTag = highlightedTag.replace(/^(&lt;\/?)([a-zA-Z0-9:-]+)/, '$1<span class="hl-tag">$2</span>');
+      highlightedTag = highlightedTag.replace(/\b([a-zA-Z0-9:-]+)(?=\s*=)(?![^<]*>)/g, '<span class="hl-attr">$1</span>');
+      return highlightedTag;
+    });
+    // Highlight comments
+    escaped = escaped.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="hl-comment">$1</span>');
+  } else if (lang === "css") {
+    escaped = escaped.replace(/(\/\*[\s\S]*?\*\/)|([\w-]+)(?=\s*:)|(:\s*)([^;\}]+)/g, (match, comment, prop, colon, val) => {
+      if (comment) {
+        return `<span class="hl-comment">${comment}</span>`;
+      }
+      if (prop) {
+        return `<span class="hl-property">${prop}</span>`;
+      }
+      if (colon && val) {
+        return `${colon}<span class="hl-value">${val}</span>`;
+      }
+      return match;
+    });
+  } else {
+    // Default: JS/TS
+    const keywords = [
+      "const", "let", "var", "function", "return", "if", "else", 
+      "for", "while", "switch", "case", "break", "class", "export", 
+      "import", "from", "async", "await", "try", "catch", "new", 
+      "throw", "instanceof", "typeof"
+    ];
+    const regex = new RegExp(`(\\/\\*[\\s\\S]*?\\*\\/|\\/\\/.*|&quot;[\\s\\S]*?&quot;|'[^']*'|\\\`[\\s\\S]*?\\\`)|\\b(${keywords.join("|")})\\b`, "g");
+    
+    escaped = escaped.replace(regex, (match, literal, keyword) => {
+      if (literal) {
+        if (literal.startsWith("//") || literal.startsWith("/*")) {
+          return `<span class="hl-comment">${literal}</span>`;
+        } else {
+          return `<span class="hl-string">${literal}</span>`;
+        }
+      }
+      return `<span class="hl-keyword">${keyword}</span>`;
+    });
+  }
+
+  return escaped;
+}
+
+// Customize marked code block renderer to support custom syntax highlighting
+const renderer = new marked.Renderer();
+renderer.code = (code, language) => {
+  let lang = language;
+  let codeStr = code;
+  if (code && typeof code === "object") {
+    codeStr = code.text || code.code || "";
+    lang = language || code.lang;
+  }
+  const highlighted = highlightCode(codeStr, lang);
+  return `<pre><code class="language-${lang || 'text'}">${highlighted}</code></pre>`;
+};
+marked.setOptions({ renderer });
+
+function inspectPageElement(selector) {
+  chrome.devtools.inspectedWindow.eval(
+    `(() => {
+      const selector = ${JSON.stringify(selector)};
+      try {
+        const el = document.querySelector(selector);
+        if (el) {
+          inspect(el);
+          return { found: true };
+        }
+        return { found: false };
+      } catch (e) {
+        return { error: e.message };
+      }
+    })()`,
+    (result, isException) => {
+      if (isException || (result && result.error)) {
+        showToast(`This target is a descriptive label: "${selector}"`, "info");
+      } else if (result && !result.found) {
+        showToast(`Could not find element matching "${selector}" on active page.`, "warning");
+      }
+    }
+  );
+}
+
+function renderDinoResponse(content, container) {
+  // Pre-process custom protocols to raw HTML links to bypass marked parser filter
+  let processed = content || "";
+  processed = processed.replace(/\[([^\]]+)\]\((suggest:[^)]+)\)/g, '<a href="$2">$1</a>');
+  processed = processed.replace(/\[([^\]]+)\]\((inspect:[^)]+)\)/g, '<a href="$2">$1</a>');
+
+  container.innerHTML = marked.parse(processed);
+  
+  // Bind [Inspect: CSS_SELECTOR](inspect:CSS_SELECTOR) links
+  container.querySelectorAll('a[href^="inspect:"]').forEach(link => {
+    const href = link.getAttribute("href");
+    const selector = decodeURIComponent(href.substring(8));
+    link.className = "target-link-btn";
+    link.removeAttribute("href");
+    link.style.cursor = "pointer";
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      inspectPageElement(selector);
+    });
+    link.addEventListener("mouseenter", () => {
+      highlightElementOnPage(selector);
+    });
+    link.addEventListener("mouseleave", () => {
+      removeHighlightFromPage();
+    });
+  });
+
+  // Bind [Label](suggest:message) suggestion buttons
+  container.querySelectorAll('a[href^="suggest:"]').forEach(link => {
+    const href = link.getAttribute("href");
+    const suggestionText = decodeURIComponent(href.substring(8));
+    link.className = "chat-suggest-btn";
+    link.removeAttribute("href");
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const chatInput = document.getElementById("chat-input");
+      if (chatInput) {
+        chatInput.value = suggestionText;
+        handleSendChatMessage();
+      }
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const chatTab = document.querySelector('[data-tab="chat"]');
   if (chatTab) {
     chatTab.addEventListener("click", onChatTabActive);
+    
+    // Automatically trigger greeting if the chat tab is active on load
+    if (chatTab.classList.contains("active")) {
+      onChatTabActive();
+    }
   }
   
   const sendBtn = document.getElementById("send-btn");
@@ -40,13 +200,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
 let hasInitializedChat = false;
 async function onChatTabActive() {
+  const chatInput = document.getElementById("chat-input");
+  if (chatInput) {
+    chatInput.focus();
+  }
+
   if (hasInitializedChat) return;
   hasInitializedChat = true;
   
   const greetingEl = document.getElementById("initial-greeting");
   try {
-    const greeting = await runDinoGreeting();
-    greetingEl.innerHTML = marked.parse(greeting);
+     const greeting = await runDinoGreeting();
+    renderDinoResponse(greeting, greetingEl);
     chatHistory = [{ role: "model", content: greeting }];
   } catch (err) {
     console.error("Failed to fetch Dino greeting:", err);
@@ -64,16 +229,18 @@ function appendChatMessage(role, content, isTyping = false) {
 
   if (role === "model") {
     msgDiv.className = "chat-message with-avatar model";
-    const bubbleContent = isTyping
-      ? `<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`
-      : marked.parse(content);
-
     msgDiv.innerHTML = `
       <div class="message-avatar">
         <img src="dino-agent.png" alt="Dino">
       </div>
-      <div class="message-bubble">${bubbleContent}</div>
+      <div class="message-bubble"></div>
     `;
+    const bubble = msgDiv.querySelector(".message-bubble");
+    if (isTyping) {
+      bubble.innerHTML = `<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
+    } else {
+      renderDinoResponse(content, bubble);
+    }
   } else {
     msgDiv.className = "chat-message user";
     msgDiv.textContent = content;
@@ -132,7 +299,7 @@ async function handleSendChatMessage() {
       }
     });
 
-    modelMsgBubble.innerHTML = marked.parse(response);
+    renderDinoResponse(response, modelMsgBubble);
 
     chatHistory.push({ role: "user", content: message });
     chatHistory.push({ role: "model", content: response });

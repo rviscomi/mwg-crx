@@ -15,6 +15,7 @@ Guidelines:
    - The MWG guide ID matches.
    - The modern recommended solution (e.g. "Use scrollbar-color CSS property").
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
+   - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
 4. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
@@ -50,6 +51,7 @@ Guidelines:
    - The MWG guide ID matches.
    - The modern recommended solution.
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
+   - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
 8. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
@@ -83,6 +85,7 @@ Guidelines:
    - The MWG guide ID matches.
    - The modern recommended solution.
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
+   - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
 7. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
@@ -104,6 +107,7 @@ const DINO_CHAT_SYSTEM_INSTRUCTION = `
 You are Dino, a sassy and pun-loving Modern Web development assistant. 
 You are represented by a pixel art dinosaur with a headset. You are an expert at modern web features and best practices.
 You have the powers of an auditor, meaning you can inspect the user's active page DOM, search for modern web guidelines, and retrieve best-practice guide contents using your tools.
+You ALSO have the ability to apply live code previews to the user's active tab and write persistent local overrides directly to their source files using tools.
 
 STRICT IDENTITY & TONE:
 - Your name is Dino.
@@ -120,6 +124,21 @@ You are running directly inside a Chrome DevTools Side Panel. You have full acce
 - If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom or get_inspected_element to retrieve the context of the user's page.
 - Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
 
+PROACTIVE OVERRIDES, PREVIEWS & SUGGESTIONS:
+- Whenever you recommend a code change or modernization solution for the user's page (e.g. replacing a legacy menu, adding a skip link, styling scrollbars), you MUST be proactive and offer options to the user as clickable suggestion buttons:
+  - Output options using the custom suggestion format: \`[Button Label](suggest:User message to send)\`.
+  - For example, you should write:
+    - \`[✨ Apply Live Preview](suggest:Apply preview)\` to let the user trigger \`apply_preview\`.
+    - \`[💾 Save as Permanent Override](suggest:Save it)\` to let the user trigger \`save_override\`.
+- In general, whenever you present a list of choices or ask the user what to do next, present those choices as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format to make the chat highly interactive and delightful!
+- If the user clicks a button, the system will automatically submit that text as their next message, which will trigger the corresponding tool (e.g., if you receive the message "Apply preview" or "Save it", call the corresponding tool).
+- FORMATTING CRITICAL: Always group all suggestion buttons together at the very bottom of your response in a single, paragraph block of side-by-side buttons (e.g. \`[✨ Apply Live Preview](suggest:Apply preview) [💾 Save as Permanent Override](suggest:Save it)\`).
+  - Do NOT put suggestion buttons inside bullet points, ordered lists, or unordered lists.
+  - Do NOT add trailing explanatory text or descriptions after the suggestion buttons (let the buttons speak for themselves).
+  - Do NOT offer suggestion buttons for inspecting elements (e.g., do not suggest "Inspect Element" or "Inspect Social Buttons") if those elements are already linked inline in your text using the \`[Link Text](inspect:CSS_SELECTOR)\` format.
+  - Do NOT offer suggestion buttons for reading guides (e.g., do not suggest "Read accessibility guide" or "Open scrollbar guide") since all referenced guides are already automatically compiled and rendered as clickable "Modern Web Sources" citation badges at the bottom of your response bubble.
+  - Do NOT offer generic suggestion buttons for asking another question (e.g., do not suggest "Ask Dino another question" or "Ask a new query") since the chat input box is always focused and ready for the user to type.
+
 INSTRUCTIONS:
 1. When asked about the current page, or how elements are implemented, or to audit a specific part, use your tools (like get_page_dom or get_inspected_element) to inspect the website context first!
 2. Use search_use_cases and get_guide_content to find and refer to the official Modern Web Guidance guidelines. Do not guess the guidance code/fallbacks.
@@ -130,9 +149,12 @@ INSTRUCTIONS:
 7. Always prefer modern, platform-native solutions. Champion the platform with a wink and a pun.
 8. Use markdown for formatting.
 9. CRITICAL: Format your code over multiple lines with proper indentation. No "meteor-impact" minified code allowed.
+10. All code samples MUST be fully realized, correct, production-ready, and functional. Do NOT include ellipses ("...") or placeholder comments representing omitted code.
+11. Whenever you mention or recommend changes to a specific DOM element on the page, you can link to it using the format: [Link Text](inspect:CSS_SELECTOR). For example, to refer to the primary navigation block, write [nav.primary-menu](inspect:nav.primary-menu). The user will be able to click this link to instantly inspect that element in the DevTools Elements panel.
+12. Whenever presenting choices, options, or asking what to do next, you should render those options as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format at the bottom of your response in a single paragraph block.
 `;
 
-async function runGeminiAgent(loggerId, startPrompt, systemInstruction) {
+async function runGeminiAgent(loggerId, startPrompt, systemInstruction, responseSchema) {
   if (isAborted) {
     throw new Error("Analysis aborted by user.");
   }
@@ -141,7 +163,9 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction) {
   }
 
   const logLines = document.getElementById(`${loggerId}-log-lines`);
-  logLines.innerHTML = ""; // Clear logs
+  if (logLines) {
+    logLines.innerHTML = ""; // Clear logs
+  }
 
   appendLog(loggerId, "Initializing Gemini Audit Agent...", "system");
 
@@ -231,7 +255,27 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction) {
         parts: [{ text: systemInstruction || GENERIC_SYSTEM_INSTRUCTION }]
       },
       generationConfig: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: responseSchema || {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              title: { type: "STRING" },
+              impact: {
+                type: "STRING",
+                enum: ["high", "medium", "low"]
+              },
+              useCaseId: { type: "STRING" },
+              guideAnchor: { type: "STRING" },
+              description: { type: "STRING" },
+              target: { type: "STRING" },
+              originalCode: { type: "STRING" },
+              modernizedCode: { type: "STRING" }
+            },
+            required: ["title", "impact", "description", "target", "originalCode", "modernizedCode"]
+          }
+        }
       }
     };
 
@@ -401,7 +445,7 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction) {
         return Array.isArray(parsed) ? parsed : [parsed];
       } catch (err) {
         console.error("Failed to parse Gemini output text to JSON:", textParts, err);
-        throw new Error("Final report did not conform to JSON format");
+        throw new Error(`Final report did not conform to JSON format: ${err.message}. Raw output: ${textParts.substring(0, 300)}`);
       }
     }
   }
@@ -530,6 +574,46 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
         {
           name: "get_inspected_element",
           description: "Retrieve the outerHTML and critical computed styling of the element currently selected in DevTools."
+        },
+        {
+          name: "apply_preview",
+          description: "Apply a modernized HTML, CSS, or JS code block dynamically into the active browser tab's DOM as a live preview.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              selector: {
+                type: "STRING",
+                description: "The CSS selector of the target element, or 'document' for global script/styles."
+              },
+              modernizedCode: {
+                type: "STRING",
+                description: "The modernized HTML, CSS, or JS code block to inject."
+              },
+              originalCode: {
+                type: "STRING",
+                description: "The original legacy HTML, CSS, or JS snippet to replace (if applicable)."
+              }
+            },
+            required: ["selector", "modernizedCode"]
+          }
+        },
+        {
+          name: "save_override",
+          description: "Scan the inspected window's static page resources (scripts, stylesheets, document), find the legacy snippet, replace it with the modernized code, and save it as a local override to disk.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              originalCode: {
+                type: "STRING",
+                description: "The legacy code snippet to locate in page resources."
+              },
+              modernizedCode: {
+                type: "STRING",
+                description: "The modernized code snippet to replace it with."
+              }
+            },
+            required: ["originalCode", "modernizedCode"]
+          }
         }
       ]
     }
@@ -613,6 +697,8 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
         else if (name === "get_guide_content") statusMsg = `Reading guide "${args.useCaseId}"...`;
         else if (name === "get_page_dom") statusMsg = "Reading active page DOM...";
         else if (name === "get_inspected_element") statusMsg = "Inspecting selected element...";
+        else if (name === "apply_preview") statusMsg = "Applying live preview to tab...";
+        else if (name === "save_override") statusMsg = "Saving local override to disk...";
         onStatus(statusMsg);
 
         let toolResult;
@@ -643,6 +729,17 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
             toolResult = await getPageDOM();
           } else if (name === "get_inspected_element") {
             toolResult = await getInspectedElement();
+          } else if (name === "apply_preview") {
+            toolResult = await applyPreview({
+              target: args.selector,
+              modernizedCode: args.modernizedCode,
+              originalCode: args.originalCode
+            }, null);
+          } else if (name === "save_override") {
+            toolResult = await saveOverride({
+              originalCode: args.originalCode,
+              modernizedCode: args.modernizedCode
+            });
           } else {
             throw new Error(`Unknown function call: ${name}`);
           }
