@@ -136,15 +136,19 @@ function inspectPageElement(selector) {
 function renderDinoResponse(content, container) {
   // Pre-process custom protocols to raw HTML links to bypass marked parser filter
   let processed = content || "";
-  processed = processed.replace(/\[([^\]]+)\]\((suggest:[^)]+)\)/g, '<a href="$2">$1</a>');
-  processed = processed.replace(/\[([^\]]+)\]\((inspect:[^)]+)\)/g, '<a href="$2">$1</a>');
+  processed = processed.replace(/\[([^\]]+)\]\((suggest:[^)]+)\)/g, (match, label, url) => {
+    return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
+  });
+  processed = processed.replace(/\[([^\]]+)\]\((inspect:[^)]+)\)/g, (match, label, url) => {
+    return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
+  });
 
   container.innerHTML = marked.parse(processed);
   
   // Bind [Inspect: CSS_SELECTOR](inspect:CSS_SELECTOR) links
   container.querySelectorAll('a[href^="inspect:"]').forEach(link => {
     const href = link.getAttribute("href");
-    const selector = decodeURIComponent(href.substring(8));
+    const selector = normalizeSelector(decodeURIComponent(href.substring(8)));
     link.className = "target-link-btn";
     link.removeAttribute("href");
     link.style.cursor = "pointer";
@@ -256,7 +260,7 @@ function renderSteps(steps, bubble, isGenerating) {
   if (!detailsEl) {
     detailsEl = document.createElement("details");
     detailsEl.className = "dino-thought-container";
-    detailsEl.open = true;
+    detailsEl.open = false;
     bubble.insertBefore(detailsEl, bubble.firstChild);
   }
 
@@ -269,13 +273,12 @@ function renderSteps(steps, bubble, isGenerating) {
 
   const toolSteps = steps.filter(s => s.type === 'tool');
   const completedCount = toolSteps.filter(s => s.status === 'completed' || s.status === 'failed').length;
-  const totalCount = toolSteps.length;
 
   let summaryText = "";
   if (isGenerating) {
-    summaryText = `Thinking... (${completedCount}/${totalCount} tools executed)`;
+    summaryText = `Thinking... (${completedCount} tool${completedCount === 1 ? "" : "s"} executed)`;
   } else {
-    summaryText = `Dino's thought process (${totalCount} tools executed)`;
+    summaryText = `Dino's thought process (${completedCount} tool${completedCount === 1 ? "" : "s"} executed)`;
   }
   summaryEl.textContent = summaryText;
 
@@ -488,6 +491,7 @@ async function handleSendChatMessage() {
         // Render thoughts in the thought steps log if present
         if (thoughts) {
           const streamingSteps = [
+            ...chatSteps,
             {
               type: 'thought',
               title: 'Thinking',
@@ -530,12 +534,16 @@ async function handleSendChatMessage() {
     }
 
     const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+    let finalResponse = response;
+    if (!finalResponse || finalResponse.trim() === "") {
+      finalResponse = streamedText;
+    }
     if (responseContent) {
-      renderDinoResponse(response, responseContent);
+      renderDinoResponse(finalResponse, responseContent);
     }
 
     chatHistory.push({ role: "user", content: message });
-    chatHistory.push({ role: "model", content: response });
+    chatHistory.push({ role: "model", content: finalResponse });
 
     // Render citations if we have them
     if (citations && citations.length > 0) {
@@ -729,23 +737,8 @@ function addMessageActions(bubble, rawContent) {
 }
 
 function parseStreamContent(text) {
-  let thoughts = "";
-  let userContent = "";
-  
-  const thoughtStart = text.indexOf("<thought>");
-  if (thoughtStart !== -1) {
-    const thoughtEnd = text.indexOf("</thought>", thoughtStart);
-    if (thoughtEnd !== -1) {
-      thoughts = text.substring(thoughtStart + 9, thoughtEnd);
-      userContent = text.substring(thoughtEnd + 10);
-    } else {
-      thoughts = text.substring(thoughtStart + 9);
-      userContent = "";
-    }
-  } else {
-    thoughts = "";
-    userContent = text;
-  }
-  
-  return { thoughts, userContent };
+  const parsed = parseThoughtAndContent(text);
+  return { thoughts: parsed.thoughts, userContent: parsed.response };
 }
+
+

@@ -1,10 +1,10 @@
 // DOM Simplifier and Selection Script
 async function getPageDOM() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
 
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     func: () => {
       const simplify = (node) => {
         if (node.nodeType === Node.TEXT_NODE) return null;
@@ -70,10 +70,10 @@ function getInspectedElement() {
 
 async function highlightElementOnPage(selector) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) return;
+    const tabId = chrome.devtools.inspectedWindow.tabId;
+    if (!tabId) return;
     chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: tabId },
       func: (sel) => {
         let overlay = document.getElementById("mwg-inspect-overlay");
         if (!overlay) {
@@ -113,10 +113,10 @@ async function highlightElementOnPage(selector) {
 
 async function removeHighlightFromPage() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) return;
+    const tabId = chrome.devtools.inspectedWindow.tabId;
+    if (!tabId) return;
     chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: tabId },
       func: () => {
         const overlay = document.getElementById("mwg-inspect-overlay");
         if (overlay) {
@@ -130,10 +130,10 @@ async function removeHighlightFromPage() {
 }
 
 async function clickElement(selector) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: (sel) => {
       const el = document.querySelector(sel);
@@ -162,10 +162,10 @@ async function clickElement(selector) {
 }
 
 async function typeText(selector, text) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: (sel, val) => {
       const el = document.querySelector(sel);
@@ -206,10 +206,10 @@ async function typeText(selector, text) {
 }
 
 async function hoverElement(selector) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: (sel) => {
       const el = document.querySelector(sel);
@@ -233,10 +233,10 @@ async function hoverElement(selector) {
 }
 
 async function getElementInfo(selector, computedProperties = []) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: (sel, props) => {
       const el = document.querySelector(sel);
@@ -286,10 +286,10 @@ async function getElementInfo(selector, computedProperties = []) {
 }
 
 async function scrollElement(selector, left, top, behavior = 'auto') {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: (sel, scrollLeft, scrollTop, scrollBehavior) => {
       const el = sel === "document" ? (document.scrollingElement || document.documentElement) : document.querySelector(sel);
@@ -312,10 +312,10 @@ async function scrollElement(selector, left, top, behavior = 'auto') {
 }
 
 async function pressKey(selector, key) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: (sel, k) => {
       const el = sel === "document" ? document : document.querySelector(sel);
@@ -349,12 +349,12 @@ async function pressKey(selector, key) {
 }
 
 async function getConsoleLogs() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) throw new Error("No active tab found");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
   
   // Make sure hooking script is also run as fallback in case the tab was loaded before extension
   await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: () => {
       if (!window.__mwg_console_hooked) {
@@ -376,11 +376,22 @@ async function getConsoleLogs() {
   });
 
   const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId: tabId },
     world: "MAIN",
     func: () => {
       return window.__mwg_console_logs || [];
     }
   });
   return result[0].result;
+}
+
+/**
+ * Normalizes a CSS selector by resolving backslash escape sequences and cleanup.
+ * @param {string} sel - The raw CSS selector.
+ * @returns {string} The normalized selector.
+ */
+function normalizeSelector(sel) {
+  if (!sel) return "";
+  // Remove backslash escapes before spaces or dots, but keep other valid escapes
+  return sel.replace(/\\(\s+|\.)/g, '$1').trim();
 }

@@ -2,6 +2,112 @@
 let isAborted = false;
 let currentAbortController = null;
 
+/**
+ * Robustly parses a response text chunk to separate the <thought> block from user-facing content.
+ * Handles missing or malformed closing thought tags using heuristics.
+ * @param {string} text - The input model response text.
+ * @returns {{thoughts: string, response: string}} The parsed thoughts and user content.
+ */
+function parseThoughtAndContent(text) {
+  let thoughts = "";
+  let response = text || "";
+
+  // 1. Primary check: Try to split by the explicit ===RESPONSE=== separator
+  const responseSeparatorMatch = response.match(/===\s*RESPONSE\s*===/i);
+  if (responseSeparatorMatch) {
+    const separatorIdx = responseSeparatorMatch.index;
+    const separatorLength = responseSeparatorMatch[0].length;
+    
+    let thoughtPart = response.substring(0, separatorIdx);
+    const thoughtStart = thoughtPart.indexOf("<thought");
+    if (thoughtStart !== -1) {
+      let openingTagEnd = thoughtPart.indexOf(">", thoughtStart);
+      if (openingTagEnd === -1 || openingTagEnd > thoughtStart + 20) {
+        openingTagEnd = thoughtStart + 8;
+      } else {
+        openingTagEnd = openingTagEnd + 1;
+      }
+      thoughtPart = thoughtPart.substring(openingTagEnd);
+    }
+    const closingTagMatch = thoughtPart.match(/<\/\s*thought\s*>\s*$/i);
+    if (closingTagMatch) {
+      thoughtPart = thoughtPart.substring(0, closingTagMatch.index);
+    }
+    
+    return {
+      thoughts: thoughtPart.trim(),
+      response: response.substring(separatorIdx + separatorLength).trim()
+    };
+  }
+
+  // 2. Secondary check: Try to split by the standard </thought> tag
+  const thoughtStart = response.indexOf("<thought");
+  if (thoughtStart !== -1) {
+    let openingTagEnd = response.indexOf(">", thoughtStart);
+    if (openingTagEnd === -1 || openingTagEnd > thoughtStart + 20) {
+      openingTagEnd = thoughtStart + 8;
+    } else {
+      openingTagEnd = openingTagEnd + 1;
+    }
+
+    const closingTagMatch = response.substring(openingTagEnd).match(/<\/\s*thought\s*>/i);
+    if (closingTagMatch) {
+      const thoughtEnd = openingTagEnd + closingTagMatch.index;
+      const closingTagEnd = thoughtEnd + closingTagMatch[0].length;
+      thoughts = response.substring(openingTagEnd, thoughtEnd).trim();
+      response = (response.substring(0, thoughtStart) + "\n" + response.substring(closingTagEnd)).trim();
+      return { thoughts, response };
+    } else {
+      // Heuristic fallback if closing tag is missing
+      const remainder = response.substring(openingTagEnd);
+      
+      // Look for Dino greeting indicators (e.g. Rawr!, 🦖, Dino here)
+      const dinoStartMatch = remainder.match(/(?:Rawr!|🦖|Dino\s+here|Rex\s+here)/i);
+      const dinoIdx = dinoStartMatch ? dinoStartMatch.index : -1;
+
+      const markers = [
+        dinoIdx,
+        remainder.indexOf("\n#"),
+        remainder.indexOf("\n`"),
+        remainder.indexOf("```")
+      ].filter(idx => idx !== -1);
+
+      if (markers.length > 0) {
+        const splitIdx = Math.min(...markers);
+        let cleanSplitIdx = splitIdx;
+        const lastNewline = remainder.lastIndexOf("\n", splitIdx);
+        if (lastNewline !== -1 && lastNewline > splitIdx - 100) {
+          cleanSplitIdx = lastNewline;
+        }
+        thoughts = remainder.substring(0, cleanSplitIdx).trim();
+        response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(cleanSplitIdx)).trim();
+      } else if (remainder.length > 800) {
+        const lastPara = remainder.lastIndexOf("\n\n");
+        if (lastPara !== -1 && lastPara > 200) {
+          thoughts = remainder.substring(0, lastPara).trim();
+          response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(lastPara)).trim();
+        } else {
+          thoughts = remainder.trim();
+          response = response.substring(0, thoughtStart).trim();
+        }
+      } else {
+        thoughts = remainder.trim();
+        response = response.substring(0, thoughtStart).trim();
+      }
+    }
+  }
+
+  return { thoughts, response };
+}
+
+function supportsThinking(modelName) {
+  if (!modelName) return false;
+  const name = modelName.toLowerCase();
+  return name.includes("gemini-2.") || 
+         name.includes("gemini-3.") || 
+         name.includes("thinking");
+}
+
 function getEnabledTools() {
   const coreTools = [
     {
@@ -240,14 +346,19 @@ Your task is to audit a production website's DOM structure and console warnings,
 Guidelines:
 1. Inspect the page DOM structure or target element to identify potential legacy web patterns, and then use semantic search (search_use_cases) or list_use_cases to discover matching guidelines.
 2. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-3. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
+3. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
+   - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
+   - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
+   - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
+   - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
+4. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
    - The element or file targeted.
    - The specific issue (e.g. "Uses custom JS scroll listener for scrollbar adjustments").
    - The MWG guide ID matches.
    - The modern recommended solution (e.g. "Use scrollbar-color CSS property").
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-4. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+5. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
 [
@@ -276,14 +387,19 @@ Guidelines:
 4. Audit the DOM specifically to check if the page's elements and structures adhere to the lessons and patterns from the loaded guides, as well as general foundational best practices for this focus area.
 5. If the DOM fails to conform, or if there is a clear opportunity to apply the modern standard recommendation or standard foundational practice, list it in your report.
 6. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-7. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
+7. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
+   - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
+   - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
+   - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
+   - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
+8. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
    - The element or file targeted.
    - The specific issue.
    - The MWG guide ID matches.
    - The modern recommended solution.
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-8. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+9. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
 [
@@ -310,14 +426,19 @@ Guidelines:
 3. You MUST retrieve the guide content for the relevant use cases you want to recommend using get_guide_content to verify details and syntax.
 4. Recommend modernization opportunities ONLY if they directly apply to this specific element. If no guidelines apply to this element, return an empty array [].
 5. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-6. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
+6. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
+   - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
+   - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
+   - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
+   - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
+7. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
    - The element targeted.
    - The specific issue.
    - The MWG guide ID matches.
    - The modern recommended solution.
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-7. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+8. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
 [
@@ -356,8 +477,13 @@ You are running directly inside a Chrome DevTools Side Panel. You have full acce
 - Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
 
 INTERNAL MONOLOGUE & PLANS:
-- Before outputting tool calls in a turn, you MUST always wrap your internal monologue, reasoning, or plan in `<thought>` and `</thought>` tags (e.g. `<thought>I need to inspect the active page DOM to see how the testimonials structure is built and if there's any custom slide navigation script. Let's call get_page_dom.</thought>`).
+- At the start of EVERY turn (including the final response turn where you do not call any tools), you MUST always wrap your internal monologue, reasoning, or plan in \`<thought>\` and \`</thought>\` tags (e.g. \`<thought>I need to inspect the active page DOM to see how the testimonials structure is built and if there's any custom slide navigation script. Let's call get_page_dom.</thought>\`).
 - This is critical because the user inspects your thought process to understand *why* you are calling specific tools and what your strategy is. If you do not wrap this explanation in these tags, it will flash in the main chat response area instead of being formatted in the thought log history.
+- In your final response turn, immediately after closing the \`</thought>\` tag, you MUST output the separator \`===RESPONSE===\` on a line by itself before writing your actual user-facing response. For example:
+  <thought>I have checked the active page DOM. I will formulate the response now.</thought>
+  ===RESPONSE===
+  Rawr! Dino here...
+- This separator is critical to help our parser cleanly split your internal thinking from your user-facing output. NEVER omit this separator in your final response turn, and NEVER write user-facing message content before it.
 
 PROACTIVE OVERRIDES, PREVIEWS & SUGGESTIONS:
 - Whenever you recommend a code change or modernization solution for the user's page (e.g. replacing a legacy menu, adding a skip link, styling scrollbars), you MUST be proactive and offer options to the user as clickable suggestion buttons:
@@ -385,8 +511,13 @@ INSTRUCTIONS:
 8. Use markdown for formatting.
 9. CRITICAL: Format your code over multiple lines with proper indentation. No "meteor-impact" minified code allowed.
 10. All code samples MUST be fully realized, correct, production-ready, and functional. Do NOT include ellipses ("...") or placeholder comments representing omitted code.
-11. Whenever you mention or recommend changes to a specific DOM element on the page, you can link to it using the format: [Link Text](inspect:CSS_SELECTOR). For example, to refer to the primary navigation block, write [nav.primary-menu](inspect:nav.primary-menu). The user will be able to click this link to instantly inspect that element in the DevTools Elements panel.
-12. Whenever presenting choices, options, or asking what to do next, you should render those options as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format at the bottom of your response in a single paragraph block.
+11. HARDEN ACCESSIBILITY (a11y) IN CODE SUGGESTIONS:
+    - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
+    - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
+    - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
+    - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
+12. Whenever you mention or recommend changes to a specific DOM element on the page, you can link to it using the format: [Link Text](inspect:CSS_SELECTOR). For example, to refer to the primary navigation block, write [nav.primary-menu](inspect:nav.primary-menu). The user will be able to click this link to instantly inspect that element in the DevTools Elements panel.
+13. Whenever presenting choices, options, or asking what to do next, you should render those options as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format at the bottom of your response in a single paragraph block.
 `;
 
 async function runGeminiAgent(loggerId, startPrompt, systemInstruction, responseSchema) {
@@ -416,11 +547,19 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
   ];
 
   let loopCount = 0;
-  const maxLoops = 30;
+  let maxLoops = 30;
 
-  while (loopCount < maxLoops) {
+  while (true) {
     if (isAborted) {
       throw new Error("Analysis aborted by user.");
+    }
+    if (loopCount >= maxLoops) {
+      const proceed = confirm(`Dino has executed ${maxLoops} tool calls. Do you want to allow another 30 tool executions?`);
+      if (proceed) {
+        maxLoops += 30;
+      } else {
+        throw new Error("Tool execution safety limit reached.");
+      }
     }
     loopCount++;
     appendLog(loggerId, `Calling Gemini API (Turn ${loopCount})...`, "system");
@@ -455,6 +594,12 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
         }
       }
     };
+
+    if (supportsThinking(config.model)) {
+      requestBody.generationConfig.thinkingConfig = {
+        thinkingBudget: 2048
+      };
+    }
 
     const historySummary = history.map(h => `${h.role} (${h.parts.map(p => Object.keys(p).join(',')).join(' | ')})`).join(' -> ');
     console.log("Request History:", historySummary);
@@ -647,8 +792,6 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
       }
     }
   }
-
-  throw new Error("Exceeded maximum execution turn limit.");
 }
 
 function appendLog(loggerId, message, sender = "system") {
@@ -730,21 +873,43 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
   const triggerUpdate = () => onStepUpdate([...steps]);
 
   let loopCount = 0;
-  const maxLoops = 30;
+  let maxLoops = 30;
 
-  while (loopCount < maxLoops) {
+  while (true) {
     if (isAborted) {
       throw new Error("Chat aborted by user.");
     }
+    if (loopCount >= maxLoops) {
+      const proceed = confirm(`Dino has executed ${maxLoops} tool calls. Do you want to allow another 30 tool executions?`);
+      if (proceed) {
+        maxLoops += 30;
+      } else {
+        throw new Error("Tool execution safety limit reached.");
+      }
+    }
     loopCount++;
+
+    let customSystemInstruction = DINO_CHAT_SYSTEM_INSTRUCTION;
+    if (supportsThinking(config.model)) {
+      customSystemInstruction += "\n\n- NATIVE THINKING CONFIGURATION ENABLED: Do NOT output manual `<thought>` or `===RESPONSE===` tags in your text response. Your internal planning/monologue is handled automatically by the API's thinking configuration. Write only your final user-facing markdown response.";
+    } else {
+      customSystemInstruction += "\n\n- INTERNAL MONOLOGUE & PLANS: At the start of your turn, wrap your internal planning monologue in `<thought>` and `</thought>` tags. Immediately after the closing tag, write the separator `===RESPONSE===` on a line by itself before writing your response.";
+    }
 
     const requestBody = {
       contents: contents,
       tools: tools,
       systemInstruction: {
-        parts: [{ text: DINO_CHAT_SYSTEM_INSTRUCTION }]
-      }
+        parts: [{ text: customSystemInstruction }]
+      },
+      generationConfig: {}
     };
+
+    if (supportsThinking(config.model)) {
+      requestBody.generationConfig.thinkingConfig = {
+        includeThoughts: true
+      };
+    }
 
     console.log(`[Dino Chat Agent] Turn ${loopCount} Request Contents:`, JSON.parse(JSON.stringify(contents)));
 
@@ -785,11 +950,12 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
               let processed = false;
 
               if (p.text !== undefined) {
+                const isThought = p.thought === true;
                 const lastPart = accumulatedParts[accumulatedParts.length - 1];
-                if (lastPart && lastPart.text !== undefined) {
+                if (lastPart && lastPart.text !== undefined && !!lastPart.thought === isThought) {
                   lastPart.text += p.text;
                 } else {
-                  accumulatedParts.push({ text: p.text });
+                  accumulatedParts.push({ text: p.text, thought: p.thought });
                 }
 
                 const activePart = accumulatedParts[accumulatedParts.length - 1];
@@ -797,9 +963,32 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
                 if (p.thoughtSignature !== undefined) activePart.thoughtSignature = p.thoughtSignature;
                 if (p.thought !== undefined) activePart.thought = p.thought;
 
-                // Stream text chunk if no function calls have been generated in this turn so far
-                if (!accumulatedParts.some(x => x.functionCall)) {
-                  onTextStream(p.text);
+                if (isThought) {
+                  let thoughtStep = steps.find(s => s.type === 'thought' && s.status === 'running');
+                  if (!thoughtStep) {
+                    thoughtStep = {
+                      type: 'thought',
+                      title: 'Thinking',
+                      details: "",
+                      status: 'running'
+                    };
+                    steps.push(thoughtStep);
+                  }
+                  thoughtStep.details += p.text;
+                  triggerUpdate();
+                } else {
+                  // Mark any running thought step as completed
+                  steps.forEach(s => {
+                    if (s.type === 'thought' && s.status === 'running') {
+                      s.status = 'completed';
+                    }
+                  });
+                  triggerUpdate();
+
+                  // Stream text chunk if no function calls have been generated in this turn so far
+                  if (!accumulatedParts.some(x => x.functionCall)) {
+                    onTextStream(p.text);
+                  }
                 }
                 processed = true;
               }
@@ -884,27 +1073,41 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
 
     const functionCalls = modelContent.parts.filter(p => p.functionCall);
 
-    // Capture thought/reasoning text if present (extracting from <thought> tags or explicit thought fields)
+    // Capture thought/reasoning text if present (extracting from explicit thought fields or <thought> tags)
     const thoughts = [];
-    for (const p of modelContent.parts) {
-      if (p.text) {
-        const thoughtMatch = p.text.match(/<thought>([\s\S]*?)<\/thought>/);
-        if (thoughtMatch) {
-          thoughts.push(thoughtMatch[1].trim());
-        } else if (p.thought || functionCalls.length > 0) {
-          thoughts.push(p.text.trim());
+    if (supportsThinking(config.model)) {
+      // Native thinking: thoughts are already streamed and added to steps in the reader loop.
+      // We just collect them from modelContent.parts for logging history
+      for (const p of modelContent.parts) {
+        if (p.thought) {
+          const tText = (typeof p.thought === "string") ? p.thought : (p.text || "");
+          if (tText.trim()) {
+            thoughts.push(tText.trim());
+          }
+        }
+      }
+    } else {
+      // Fallback XML parsing
+      for (const p of modelContent.parts) {
+        if (p.text) {
+          const parsed = parseThoughtAndContent(p.text);
+          if (parsed.thoughts) {
+            thoughts.push(parsed.thoughts);
+          }
+        }
+      }
+      for (const t of thoughts) {
+        if (!steps.some(s => s.type === 'thought' && s.details === t)) {
+          steps.push({
+            type: 'thought',
+            title: 'Thinking',
+            details: t,
+            status: 'completed'
+          });
         }
       }
     }
 
-    for (const t of thoughts) {
-      steps.push({
-        type: 'thought',
-        title: 'Thinking',
-        details: t,
-        status: 'completed'
-      });
-    }
     if (thoughts.length > 0) {
       triggerUpdate();
     }
@@ -1021,29 +1224,47 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
       });
     } else {
       // Final text response reached
-      // Check for any remaining thought/reasoning part in the final response candidates
-      const finalThoughts = modelContent.parts.filter(p => p.text && p.thought);
-      for (const t of finalThoughts) {
-        steps.push({
-          type: 'thought',
-          title: 'Thinking',
-          details: t.text,
-          status: 'completed'
-        });
-      }
-      if (finalThoughts.length > 0) {
-        triggerUpdate();
+      const finalThoughts = [];
+      const finalResponseParts = [];
+      if (supportsThinking(config.model)) {
+        for (const p of modelContent.parts) {
+          if (p.thought) {
+            const tText = (typeof p.thought === "string") ? p.thought : (p.text || "");
+            if (tText.trim()) {
+              finalThoughts.push(tText.trim());
+            }
+          } else if (p.text) {
+            finalResponseParts.push(p.text);
+          }
+        }
+      } else {
+        for (const p of modelContent.parts) {
+          if (p.text) {
+            const parsed = parseThoughtAndContent(p.text);
+            if (parsed.thoughts) {
+              finalThoughts.push(parsed.thoughts);
+            }
+            finalResponseParts.push(parsed.response);
+          }
+        }
+        for (const t of finalThoughts) {
+          if (!steps.some(s => s.type === 'thought' && s.details === t)) {
+            steps.push({
+              type: 'thought',
+              title: 'Thinking',
+              details: t,
+              status: 'completed'
+            });
+          }
+        }
+        if (finalThoughts.length > 0) {
+          triggerUpdate();
+        }
       }
 
-      const textResponse = modelContent.parts
-        .filter(p => p.text !== undefined && !p.thought)
-        .map(p => p.text.replace(/<thought>[\s\S]*?(?:<\/thought>|$)/g, ""))
-        .join("\n")
-        .trim();
+      const textResponse = finalResponseParts.join("\n").trim();
       return { response: textResponse, citations };
     }
   }
-
-  throw new Error("Exceeded maximum execution turn limit.");
 }
 

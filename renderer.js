@@ -29,6 +29,9 @@ function renderOpportunities(container, list) {
   });
 
   sortedList.forEach((opp, index) => {
+    if (opp.target) {
+      opp.target = normalizeSelector(opp.target);
+    }
     const card = document.createElement("div");
     card.className = "opp-card";
     card.dataset.oppIndex = index;
@@ -54,6 +57,8 @@ function renderOpportunities(container, list) {
       targetHtml = `<a class="target-link-btn" href="#" data-target="${escapeHtml(opp.target)}"><code>${escapeHtml(opp.target)}</code></a>`;
     }
 
+
+
     card.innerHTML = `
       <div class="opp-header">
         <div class="opp-title-group">
@@ -66,7 +71,8 @@ function renderOpportunities(container, list) {
       </div>
       <div class="opp-body">
         <p class="opp-description">${escapeHtml(opp.description)}</p>
-        
+
+
         <div class="opp-verification-banner hidden">
           <span class="verify-icon"></span>
           <span class="verify-text"></span>
@@ -205,6 +211,8 @@ function renderOpportunities(container, list) {
     }
 
     container.appendChild(card);
+
+
   });
 }
 
@@ -224,9 +232,9 @@ async function applyPreview(opp, card) {
     return;
   }
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) {
-    showToast("No active tab found.", "error");
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) {
+    showToast("No inspected tab found.", "error");
     return;
   }
 
@@ -234,7 +242,7 @@ async function applyPreview(opp, card) {
 
   try {
     const result = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: tabId },
       func: (selector, code, originalCode) => {
         code = code.trim();
 
@@ -416,10 +424,19 @@ async function verifyOpportunity(opp, card) {
   banner.classList.remove("hidden");
 
   try {
+    let guideContent = "";
+    if (opp.useCaseId) {
+      try {
+        guideContent = await getGuideContent(opp.useCaseId);
+      } catch (err) {
+        console.warn("Could not load guide content for verification:", err);
+      }
+    }
+
     const domInfo = await getPageDOM();
     if (!domInfo) throw new Error("Could not capture page DOM for verification.");
 
-    const verifyPrompt = `You are verifying if a modernization fix was successful.
+    let verifyPrompt = `You are verifying if a modernization fix was successful.
 Original Legacy Issue:
 - Title: "${opp.title}"
 - Target Element Selector: "${opp.target}"
@@ -431,10 +448,15 @@ URL: ${domInfo.url}
 DOM HTML Structure (Simplified):
 ${domInfo.dom}
 
-Your task is to analyze if the specific legacy issue described has been successfully resolved/modernized on the page.
-If you need to interact with the page to trigger dynamic behavior, check styles, or test elements (e.g. clicking a button, hovering, checking computed styles of the target selector, checking console warnings/errors), you MUST call the appropriate browser tools (click_element, hover_element, type_text, get_element_info, get_console_logs).
-If the legacy issue is resolved and everything functions correctly without javascript errors, mark it as resolved.
-If the legacy issue is still active or fails to execute properly, mark it as not resolved.`;
+Your task is to analyze if the specific legacy issue described has been successfully resolved/modernized on the page.`;
+
+    if (guideContent) {
+      verifyPrompt += `\n\nOfficial MWG Guide Reference Guidelines for this Use Case:\n===\n${guideContent}\n===`;
+    }
+
+    verifyPrompt += `\n\nIf you need to interact with the page to trigger dynamic behavior, check styles, or test elements (e.g. clicking a button, hovering, checking computed styles of the target selector, checking console warnings/errors), you MUST call the appropriate browser tools (click_element, hover_element, type_text, get_element_info, get_console_logs).
+If the legacy issue is resolved and everything functions correctly without javascript errors and complies with the guide, mark it as resolved.
+If the legacy issue is still active, fails to execute properly, or violates the guide, mark it as not resolved.`;
 
     const systemInstruction = `You are a strict code verification agent. Analyze the provided DOM state and interact with the page if needed to verify the target legacy issue is resolved.
 You have tools to click elements, hover elements, type text, read computed CSS styles/attributes of selectors, and fetch console logs. Use them if the modernization fix requires user interaction, styling verification, or error checks.
@@ -473,7 +495,9 @@ Output your verification report STRICTLY as a JSON object matching this schema:
       
       banner.className = "opp-verification-banner failed";
       if (verifyIcon) verifyIcon.textContent = "❌";
-      if (verifyText) verifyText.textContent = `Verification failed: ${verifyResult?.feedback || 'Could not verify fix.'}`;
+      
+      let failMessage = `Verification failed: ${verifyResult?.feedback || 'Could not verify fix.'}`;
+      if (verifyText) verifyText.innerHTML = failMessage;
       
       card.classList.remove("resolved");
     }
