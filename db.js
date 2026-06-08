@@ -79,10 +79,62 @@ async function getGuideContent(useCaseId) {
 }
 
 async function searchUseCases(query) {
-  const url = config.baseUrl.endsWith("/") ? config.baseUrl : config.baseUrl + "/";
-  const response = await fetch(`${url}search?q=${encodeURIComponent(query)}`);
-  if (!response.ok) throw new Error(`Search request failed: HTTP ${response.status}`);
-  return await response.json();
+  try {
+    const url = config.baseUrl.endsWith("/") ? config.baseUrl : config.baseUrl + "/";
+    const response = await fetch(`${url}search?q=${encodeURIComponent(query)}`);
+    if (response.ok) return await response.json();
+  } catch (err) {
+    console.warn("Worker API search failed, running local fuzzy search fallback...", err);
+  }
+
+  // Local Search Fallback
+  if (!query) return [];
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  const results = [];
+  for (const uc of useCasesCache) {
+    let score = 0;
+    const id = (uc.id || "").toLowerCase();
+    const desc = (uc.description || "").toLowerCase();
+    const cat = (uc.category || "").toLowerCase();
+    const features = (uc.featuresUsed || []).map(f => f.toLowerCase());
+
+    terms.forEach(term => {
+      if (id === term) score += 100;
+      else if (id.includes(term)) score += 50;
+
+      if (cat === term) score += 30;
+      else if (cat.includes(term)) score += 10;
+
+      if (desc.includes(term)) {
+        score += 20;
+        // Boost if word boundaries match
+        const regex = new RegExp(`\\b${term}\\b`, 'i');
+        if (regex.test(desc)) score += 15;
+      }
+
+      features.forEach(f => {
+        if (f === term) score += 40;
+        else if (f.includes(term)) score += 20;
+      });
+    });
+
+    if (score > 0) {
+      results.push({
+        item: {
+          id: uc.id,
+          description: uc.description,
+          category: uc.category,
+          featuresUsed: uc.featuresUsed
+        },
+        score
+      });
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, 15).map(r => r.item);
 }
 
 async function listCategories() {

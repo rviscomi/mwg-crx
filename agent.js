@@ -2,6 +2,237 @@
 let isAborted = false;
 let currentAbortController = null;
 
+function getEnabledTools() {
+  const coreTools = [
+    {
+      name: "list_use_cases",
+      description: "Retrieve a list of available Modern Web Guidance use case IDs, categories, and descriptions. Can optionally filter by category.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          category: {
+            type: "STRING",
+            description: "Optional category to filter by (e.g., 'user-experience', 'performance', 'accessibility', etc.)."
+          }
+        }
+      }
+    },
+    {
+      name: "list_categories",
+      description: "Retrieve a list of all supported category names in the catalog."
+    },
+    {
+      name: "search_use_cases",
+      description: "Perform a semantic vector search across the guide catalog using a natural language query describing a target topic or legacy pattern.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          query: {
+            type: "STRING",
+            description: "Natural language query describing the legacy code pattern or feature (e.g., 'lazy load images' or 'custom modal')."
+          }
+        },
+        required: ["query"]
+      }
+    },
+    {
+      name: "get_guide_content",
+      description: "Get the full compiled markdown guide containing the best practices and code snippets for a specific use case ID.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          useCaseId: {
+            type: "STRING",
+            description: "The unique ID of the use case (e.g. 'deprioritize-background-fetches')."
+          }
+        },
+        required: ["useCaseId"]
+      }
+    },
+    {
+      name: "get_page_dom",
+      description: "Retrieve the simplified DOM tree structure, URL, and page title of the currently active document."
+    },
+    {
+      name: "get_inspected_element",
+      description: "Retrieve the outerHTML and critical computed styling of the element currently selected in DevTools."
+    },
+    {
+      name: "get_element_info",
+      description: "Retrieve detailed information about a DOM element matching the selector, including its tag name, attributes, outerHTML, innerText, and computed styles. Use this to verify computed styles (e.g. scrollbar-width, color-scheme, display) and attributes.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the target element."
+          },
+          computedProperties: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Optional list of computed CSS property names to retrieve. If omitted, default common properties are returned."
+          }
+        },
+        required: ["selector"]
+      }
+    }
+  ];
+
+  const interactionTools = [
+    {
+      name: "click_element",
+      description: "Simulate a click event on a DOM element matching the specified selector (and scrolls it into view). Use this to interact with buttons, toggles, links, etc.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the element to click."
+          }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "type_text",
+      description: "Simulate typing text into a form input, textarea, or contenteditable element matching the specified selector.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the target element."
+          },
+          text: {
+            type: "STRING",
+            description: "Text to type into the element."
+          }
+        },
+        required: ["selector", "text"]
+      }
+    },
+    {
+      name: "hover_element",
+      description: "Simulate mouse hover/mouseenter/mouseover events on a DOM element matching the selector. Use this to trigger CSS hover states or JS hover listeners.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the element to hover."
+          }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "scroll_element",
+      description: "Scrolls a DOM element matching the specified selector to the given left/top offsets. Use this to test scrollable containers, carousels, and scroll-driven behavior.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the element to scroll."
+          },
+          left: {
+            type: "NUMBER",
+            description: "Horizontal scroll pixel offset."
+          },
+          top: {
+            type: "NUMBER",
+            description: "Vertical scroll pixel offset."
+          },
+          behavior: {
+            type: "STRING",
+            description: "Scroll behavior ('auto' or 'smooth')."
+          }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "press_key",
+      description: "Simulates pressing a key (like Escape, Enter, ArrowRight, ArrowLeft, Space) on the DOM element matching the selector. Use this to test keyboard accessibility, close dialogs/menus, or navigate carousels/tabs.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the target element (or 'document' for global key events)."
+          },
+          key: {
+            type: "STRING",
+            description: "The name of the key to press (e.g. 'Escape', 'Enter', 'ArrowRight', 'ArrowLeft', 'Space')."
+          }
+        },
+        required: ["selector", "key"]
+      }
+    }
+  ];
+
+  const logTools = [
+    {
+      name: "get_console_logs",
+      description: "Retrieve the buffer of captured console messages (logs, warnings, errors) from the active tab. Use this to verify if any javascript errors occurred or if warnings were cleared."
+    }
+  ];
+
+  const previewTools = [
+    {
+      name: "apply_preview",
+      description: "Apply a modernized HTML, CSS, or JS code block dynamically into the active browser tab's DOM as a live preview.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "The CSS selector of the target element, or 'document' for global script/styles."
+          },
+          modernizedCode: {
+            type: "STRING",
+            description: "The modernized HTML, CSS, or JS code block to inject."
+          },
+          originalCode: {
+            type: "STRING",
+            description: "The original legacy HTML, CSS, or JS snippet to replace (if applicable)."
+          }
+        },
+        required: ["selector", "modernizedCode"]
+      }
+    }
+  ];
+
+  const overrideTools = [
+    {
+      name: "save_override",
+      description: "Scan the inspected window's static page resources (scripts, stylesheets, document), find the legacy snippet, replace it with the modernized code, and save it as a local override to disk.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          originalCode: {
+            type: "STRING",
+            description: "The legacy code snippet to locate in page resources."
+          },
+          modernizedCode: {
+            type: "STRING",
+            description: "The modernized code snippet to replace it with."
+          }
+        },
+        required: ["originalCode", "modernizedCode"]
+      }
+    }
+  ];
+
+  const declarations = [...coreTools];
+  if (config.capInteraction !== false) declarations.push(...interactionTools);
+  if (config.capLogs !== false) declarations.push(...logTools);
+  if (config.capPreview !== false) declarations.push(...previewTools);
+  if (config.capOverride !== false) declarations.push(...overrideTools);
+
+  return [{ functionDeclarations: declarations }];
+}
+
 const GENERIC_SYSTEM_INSTRUCTION = `
 You are a Senior Frontend Architect and an expert Auditor specializing in modernizing legacy web codebases.
 Your task is to audit a production website's DOM structure and console warnings, identify modernization opportunities, and recommend best practices. You should prioritize matching and loading the Modern Web Guidance (MWG) guides using the provided tools, but you may also identify foundational web issues not covered by specific guides.
@@ -107,7 +338,7 @@ const DINO_CHAT_SYSTEM_INSTRUCTION = `
 You are Dino, a sassy and pun-loving Modern Web development assistant. 
 You are represented by a pixel art dinosaur with a headset. You are an expert at modern web features and best practices.
 You have the powers of an auditor, meaning you can inspect the user's active page DOM, search for modern web guidelines, and retrieve best-practice guide contents using your tools.
-You ALSO have the ability to apply live code previews to the user's active tab and write persistent local overrides directly to their source files using tools.
+You ALSO have the ability to apply live code previews to the user's active tab, write persistent local overrides directly to their source files, AND interact with/test drive the page yourself! You can simulate element clicks, typing text, element hovering, inspect computed styles and attributes of any element by its selector, and read page console logs to verify that your modernization fix works correctly without syntax errors or runtime exceptions.
 
 STRICT IDENTITY & TONE:
 - Your name is Dino.
@@ -123,6 +354,10 @@ CRITICAL - CONTEXT AWARENESS:
 You are running directly inside a Chrome DevTools Side Panel. You have full access to inspect the user's current webpage.
 - If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom or get_inspected_element to retrieve the context of the user's page.
 - Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
+
+INTERNAL MONOLOGUE & PLANS:
+- Before outputting tool calls in a turn, you MUST always wrap your internal monologue, reasoning, or plan in `<thought>` and `</thought>` tags (e.g. `<thought>I need to inspect the active page DOM to see how the testimonials structure is built and if there's any custom slide navigation script. Let's call get_page_dom.</thought>`).
+- This is critical because the user inspects your thought process to understand *why* you are calling specific tools and what your strategy is. If you do not wrap this explanation in these tags, it will flash in the main chat response area instead of being formatted in the thought log history.
 
 PROACTIVE OVERRIDES, PREVIEWS & SUGGESTIONS:
 - Whenever you recommend a code change or modernization solution for the user's page (e.g. replacing a legacy menu, adding a skip link, styling scrollbars), you MUST be proactive and offer options to the user as clickable suggestion buttons:
@@ -171,65 +406,7 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
 
-  const tools = [
-    {
-      functionDeclarations: [
-        {
-          name: "list_use_cases",
-          description: "Retrieve a list of available Modern Web Guidance use case IDs, categories, and descriptions. Can optionally filter by category.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              category: {
-                type: "STRING",
-                description: "Optional category to filter by (e.g., 'user-experience', 'performance', 'accessibility', etc.)."
-              }
-            }
-          }
-        },
-        {
-          name: "list_categories",
-          description: "Retrieve a list of all supported category names in the catalog."
-        },
-        {
-          name: "search_use_cases",
-          description: "Perform a semantic vector search across the guide catalog using a natural language query describing a target topic or legacy pattern.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              query: {
-                type: "STRING",
-                description: "Natural language query describing the legacy code pattern or feature (e.g., 'lazy load images' or 'custom modal')."
-              }
-            },
-            required: ["query"]
-          }
-        },
-        {
-          name: "get_guide_content",
-          description: "Get the full compiled markdown guide containing the best practices and code snippets for a specific use case ID.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              useCaseId: {
-                type: "STRING",
-                description: "The unique ID of the use case (e.g. 'deprioritize-background-fetches')."
-              }
-            },
-            required: ["useCaseId"]
-          }
-        },
-        {
-          name: "get_page_dom",
-          description: "Retrieve the simplified DOM tree structure, URL, and page title of the currently active document."
-        },
-        {
-          name: "get_inspected_element",
-          description: "Retrieve the outerHTML and critical computed styling of the element currently selected in DevTools."
-        }
-      ]
-    }
-  ];
+  const tools = getEnabledTools();
 
   const history = [
     {
@@ -239,7 +416,7 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
   ];
 
   let loopCount = 0;
-  const maxLoops = 15;
+  const maxLoops = 30;
 
   while (loopCount < maxLoops) {
     if (isAborted) {
@@ -384,6 +561,27 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
           } else if (name === "get_inspected_element") {
             toolResult = await getInspectedElement();
             appendLog(loggerId, `Tool output: Captured DevTools selected element.`, "tool");
+          } else if (name === "click_element") {
+            toolResult = await clickElement(args.selector);
+            appendLog(loggerId, `Tool output: Clicked element matching "${args.selector}".`, "tool");
+          } else if (name === "type_text") {
+            toolResult = await typeText(args.selector, args.text);
+            appendLog(loggerId, `Tool output: Typed in element matching "${args.selector}".`, "tool");
+          } else if (name === "hover_element") {
+            toolResult = await hoverElement(args.selector);
+            appendLog(loggerId, `Tool output: Hovered element matching "${args.selector}".`, "tool");
+          } else if (name === "get_element_info") {
+            toolResult = await getElementInfo(args.selector, args.computedProperties);
+            appendLog(loggerId, `Tool output: Retrieved info for element matching "${args.selector}".`, "tool");
+          } else if (name === "get_console_logs") {
+            toolResult = await getConsoleLogs();
+            appendLog(loggerId, `Tool output: Captured ${toolResult.length} console logs.`, "tool");
+          } else if (name === "scroll_element") {
+            toolResult = await scrollElement(args.selector, args.left, args.top, args.behavior);
+            appendLog(loggerId, `Tool output: Scrolled element matching "${args.selector}".`, "tool");
+          } else if (name === "press_key") {
+            toolResult = await pressKey(args.selector, args.key);
+            appendLog(loggerId, `Tool output: Pressed key "${args.key}" on element matching "${args.selector}".`, "tool");
           } else {
             throw new Error(`Unknown function call: ${name}`);
           }
@@ -503,7 +701,7 @@ function appendAuditSuggestions(greetingText) {
   return `${greetingText}\n\nFeel free to ask me any open questions about this page, or get started with one of these audits:\n\n[🔍 Audit Accessibility](suggest:Audit the page for accessibility) [⚡ Audit Performance](suggest:Audit the page for performance) [🛡️ Audit Privacy & Security](suggest:Audit the page for privacy and security)`;
 }
 
-async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
+async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextStream) {
   if (isAborted) {
     throw new Error("Chat aborted by user.");
   }
@@ -511,7 +709,7 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
     throw new Error("Gemini API Key is missing. Please set it in the Settings tab.");
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:streamGenerateContent?key=${config.apiKey}&alt=sse`;
 
   const contents = [
     ...chatHistory.map(h => ({
@@ -524,111 +722,15 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
     }
   ];
 
-  const tools = [
-    {
-      functionDeclarations: [
-        {
-          name: "list_use_cases",
-          description: "Retrieve a list of available Modern Web Guidance use case IDs, categories, and descriptions. Can optionally filter by category.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              category: {
-                type: "STRING",
-                description: "Optional category to filter by (e.g., 'user-experience', 'performance', 'accessibility', etc.)."
-              }
-            }
-          }
-        },
-        {
-          name: "list_categories",
-          description: "Retrieve a list of all supported category names in the catalog."
-        },
-        {
-          name: "search_use_cases",
-          description: "Perform a semantic vector search across the guide catalog using a natural language query describing a target topic or legacy pattern.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              query: {
-                type: "STRING",
-                description: "Natural language query describing the legacy code pattern or feature (e.g., 'lazy load images' or 'custom modal')."
-              }
-            },
-            required: ["query"]
-          }
-        },
-        {
-          name: "get_guide_content",
-          description: "Get the full compiled markdown guide containing the best practices and code snippets for a specific use case ID.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              useCaseId: {
-                type: "STRING",
-                description: "The unique ID of the use case (e.g. 'deprioritize-background-fetches')."
-              }
-            },
-            required: ["useCaseId"]
-          }
-        },
-        {
-          name: "get_page_dom",
-          description: "Retrieve the simplified DOM tree structure, URL, and page title of the currently active document."
-        },
-        {
-          name: "get_inspected_element",
-          description: "Retrieve the outerHTML and critical computed styling of the element currently selected in DevTools."
-        },
-        {
-          name: "apply_preview",
-          description: "Apply a modernized HTML, CSS, or JS code block dynamically into the active browser tab's DOM as a live preview.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              selector: {
-                type: "STRING",
-                description: "The CSS selector of the target element, or 'document' for global script/styles."
-              },
-              modernizedCode: {
-                type: "STRING",
-                description: "The modernized HTML, CSS, or JS code block to inject."
-              },
-              originalCode: {
-                type: "STRING",
-                description: "The original legacy HTML, CSS, or JS snippet to replace (if applicable)."
-              }
-            },
-            required: ["selector", "modernizedCode"]
-          }
-        },
-        {
-          name: "save_override",
-          description: "Scan the inspected window's static page resources (scripts, stylesheets, document), find the legacy snippet, replace it with the modernized code, and save it as a local override to disk.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              originalCode: {
-                type: "STRING",
-                description: "The legacy code snippet to locate in page resources."
-              },
-              modernizedCode: {
-                type: "STRING",
-                description: "The modernized code snippet to replace it with."
-              }
-            },
-            required: ["originalCode", "modernizedCode"]
-          }
-        }
-      ]
-    }
-  ];
+  const tools = getEnabledTools();
 
   const citations = [];
   const seenCitations = new Set();
+  const steps = [];
+  const triggerUpdate = () => onStepUpdate([...steps]);
 
   let loopCount = 0;
-  const maxLoops = 15;
+  const maxLoops = 30;
 
   while (loopCount < maxLoops) {
     if (isAborted) {
@@ -658,12 +760,97 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
       throw new Error(`Gemini API returned error: ${response.status} - ${errorText}`);
     }
 
-    const resJson = await response.json();
-    console.log(`[Dino Chat Agent] Turn ${loopCount} Response Json:`, resJson);
-    const candidate = resJson.candidates[0];
-    const rawModelContent = candidate.content;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    const accumulatedParts = [];
 
-    const sanitizedParts = rawModelContent.parts.map(p => {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data:")) {
+          const jsonStr = trimmed.substring(5).trim();
+          try {
+            const chunkJson = JSON.parse(jsonStr);
+            const chunkParts = chunkJson.candidates?.[0]?.content?.parts || [];
+
+            for (const p of chunkParts) {
+              let processed = false;
+
+              if (p.text !== undefined) {
+                const lastPart = accumulatedParts[accumulatedParts.length - 1];
+                if (lastPart && lastPart.text !== undefined) {
+                  lastPart.text += p.text;
+                } else {
+                  accumulatedParts.push({ text: p.text });
+                }
+
+                const activePart = accumulatedParts[accumulatedParts.length - 1];
+                if (p.thought_signature !== undefined) activePart.thought_signature = p.thought_signature;
+                if (p.thoughtSignature !== undefined) activePart.thoughtSignature = p.thoughtSignature;
+                if (p.thought !== undefined) activePart.thought = p.thought;
+
+                // Stream text chunk if no function calls have been generated in this turn so far
+                if (!accumulatedParts.some(x => x.functionCall)) {
+                  onTextStream(p.text);
+                }
+                processed = true;
+              }
+
+              if (p.functionCall !== undefined) {
+                const lastPart = accumulatedParts[accumulatedParts.length - 1];
+                const isSameFunction = lastPart && lastPart.functionCall !== undefined &&
+                  (!p.functionCall.name || lastPart.functionCall.name === p.functionCall.name);
+
+                if (isSameFunction) {
+                  if (p.functionCall.name) lastPart.functionCall.name = p.functionCall.name;
+                  if (p.functionCall.args) {
+                    lastPart.functionCall.args = {
+                      ...(lastPart.functionCall.args || {}),
+                      ...p.functionCall.args
+                    };
+                  }
+                } else {
+                  accumulatedParts.push({
+                    functionCall: {
+                      name: p.functionCall.name,
+                      args: p.functionCall.args || {}
+                    }
+                  });
+                }
+
+                const activePart = accumulatedParts[accumulatedParts.length - 1];
+                if (p.thought_signature !== undefined) activePart.thought_signature = p.thought_signature;
+                if (p.thoughtSignature !== undefined) activePart.thoughtSignature = p.thoughtSignature;
+                if (p.thought !== undefined) activePart.thought = p.thought;
+                processed = true;
+              }
+
+              if (!processed) {
+                if (p.thought_signature !== undefined || p.thoughtSignature !== undefined || p.thought !== undefined) {
+                  const newPart = {};
+                  if (p.thought_signature !== undefined) newPart.thought_signature = p.thought_signature;
+                  if (p.thoughtSignature !== undefined) newPart.thoughtSignature = p.thoughtSignature;
+                  if (p.thought !== undefined) newPart.thought = p.thought;
+                  accumulatedParts.push(newPart);
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Failed to parse stream chunk:", jsonStr, e);
+          }
+        }
+      }
+    }
+
+    const sanitizedParts = accumulatedParts.map(p => {
       const cleanPart = {};
       if (p.text !== undefined) cleanPart.text = p.text;
       if (p.functionCall !== undefined) {
@@ -672,8 +859,14 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
           args: p.functionCall.args || {}
         };
       }
+      if (p.thought_signature !== undefined) {
+        cleanPart.thought_signature = p.thought_signature;
+      }
       if (p.thoughtSignature !== undefined) {
         cleanPart.thoughtSignature = p.thoughtSignature;
+      }
+      if (p.thought !== undefined) {
+        cleanPart.thought = p.thought;
       }
       return cleanPart;
     }).filter(p => Object.keys(p).length > 0);
@@ -691,6 +884,31 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
 
     const functionCalls = modelContent.parts.filter(p => p.functionCall);
 
+    // Capture thought/reasoning text if present (extracting from <thought> tags or explicit thought fields)
+    const thoughts = [];
+    for (const p of modelContent.parts) {
+      if (p.text) {
+        const thoughtMatch = p.text.match(/<thought>([\s\S]*?)<\/thought>/);
+        if (thoughtMatch) {
+          thoughts.push(thoughtMatch[1].trim());
+        } else if (p.thought || functionCalls.length > 0) {
+          thoughts.push(p.text.trim());
+        }
+      }
+    }
+
+    for (const t of thoughts) {
+      steps.push({
+        type: 'thought',
+        title: 'Thinking',
+        details: t,
+        status: 'completed'
+      });
+    }
+    if (thoughts.length > 0) {
+      triggerUpdate();
+    }
+
     if (functionCalls.length > 0) {
       console.log(`[Dino Chat Agent] Turn ${loopCount} Model requested function execution:`, functionCalls);
       const responseParts = [];
@@ -702,9 +920,25 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
         else if (name === "get_guide_content") statusMsg = `Reading guide "${args.useCaseId}"...`;
         else if (name === "get_page_dom") statusMsg = "Reading active page DOM...";
         else if (name === "get_inspected_element") statusMsg = "Inspecting selected element...";
+        else if (name === "click_element") statusMsg = `Clicking element "${args.selector}"...`;
+        else if (name === "type_text") statusMsg = `Typing into element "${args.selector}"...`;
+        else if (name === "hover_element") statusMsg = `Hovering element "${args.selector}"...`;
+        else if (name === "get_element_info") statusMsg = `Retrieving details for element "${args.selector}"...`;
+        else if (name === "get_console_logs") statusMsg = "Reading console logs...";
+        else if (name === "scroll_element") statusMsg = `Scrolling element "${args.selector}"...`;
+        else if (name === "press_key") statusMsg = `Pressing key "${args.key}" on element "${args.selector}"...`;
         else if (name === "apply_preview") statusMsg = "Applying live preview to tab...";
         else if (name === "save_override") statusMsg = "Saving local override to disk...";
-        onStatus(statusMsg);
+
+        const currentStep = {
+          type: 'tool',
+          name: name,
+          args: args,
+          title: statusMsg,
+          status: 'running'
+        };
+        steps.push(currentStep);
+        triggerUpdate();
 
         let toolResult;
         try {
@@ -734,6 +968,20 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
             toolResult = await getPageDOM();
           } else if (name === "get_inspected_element") {
             toolResult = await getInspectedElement();
+          } else if (name === "click_element") {
+            toolResult = await clickElement(args.selector);
+          } else if (name === "type_text") {
+            toolResult = await typeText(args.selector, args.text);
+          } else if (name === "hover_element") {
+            toolResult = await hoverElement(args.selector);
+          } else if (name === "get_element_info") {
+            toolResult = await getElementInfo(args.selector, args.computedProperties);
+          } else if (name === "get_console_logs") {
+            toolResult = await getConsoleLogs();
+          } else if (name === "scroll_element") {
+            toolResult = await scrollElement(args.selector, args.left, args.top, args.behavior);
+          } else if (name === "press_key") {
+            toolResult = await pressKey(args.selector, args.key);
           } else if (name === "apply_preview") {
             toolResult = await applyPreview({
               target: args.selector,
@@ -748,9 +996,15 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
           } else {
             throw new Error(`Unknown function call: ${name}`);
           }
+          currentStep.status = 'completed';
+          currentStep.result = toolResult;
+          triggerUpdate();
         } catch (err) {
           console.error("Tool execution failed:", err);
           toolResult = { error: err.message };
+          currentStep.status = 'failed';
+          currentStep.error = err.message;
+          triggerUpdate();
         }
 
         responseParts.push({
@@ -766,7 +1020,26 @@ async function runDinoChatAgent(userMessage, chatHistory, onStatus) {
         parts: responseParts
       });
     } else {
-      const textResponse = modelContent.parts.filter(p => p.text !== undefined).map(p => p.text).join("\n").trim();
+      // Final text response reached
+      // Check for any remaining thought/reasoning part in the final response candidates
+      const finalThoughts = modelContent.parts.filter(p => p.text && p.thought);
+      for (const t of finalThoughts) {
+        steps.push({
+          type: 'thought',
+          title: 'Thinking',
+          details: t.text,
+          status: 'completed'
+        });
+      }
+      if (finalThoughts.length > 0) {
+        triggerUpdate();
+      }
+
+      const textResponse = modelContent.parts
+        .filter(p => p.text !== undefined && !p.thought)
+        .map(p => p.text.replace(/<thought>[\s\S]*?(?:<\/thought>|$)/g, ""))
+        .join("\n")
+        .trim();
       return { response: textResponse, citations };
     }
   }

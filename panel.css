@@ -1341,3 +1341,174 @@ body {
 .btn-copy-msg.copied {
   color: #34d399; /* Green success color */
 }
+
+/* Collapsible Thought Process and Agent Steps */
+.dino-thought-container {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-secondary);
+  margin-bottom: 12px;
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+
+.dino-thought-summary {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  background-color: var(--bg-secondary);
+  outline: none;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dino-thought-summary:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.dino-thought-container[open] {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.dino-steps-list {
+  border-top: 1px solid var(--border-color);
+  padding: 4px 0;
+  max-height: 250px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dino-step {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.dino-step:last-child {
+  border-bottom: none;
+}
+
+.dino-step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.dino-step-header:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.dino-step-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.dino-step-title {
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+}
+
+.dino-step:hover .dino-step-title {
+  color: var(--text-primary);
+}
+
+.dino-step.running .dino-step-title {
+  color: var(--warning-color);
+}
+
+.dino-step.failed .dino-step-title {
+  color: var(--danger-color);
+}
+
+.dino-step-details {
+  padding: 8px 12px 10px 32px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dino-step-args,
+.dino-step-result {
+  font-size: 11px;
+}
+
+.dino-step-args code {
+  font-family: var(--font-mono);
+  background-color: var(--bg-tertiary);
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #c9d1d9;
+}
+
+.dino-step-result pre {
+  margin-top: 4px;
+  padding: 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 150px;
+}
+
+.dino-step-result pre code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: none;
+  padding: 0;
+}
+
+.dino-step-thought-text {
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+/* Settings Capabilities Styles */
+.capabilities-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  background-color: var(--bg-secondary);
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-container input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--button-success-bg, #2ea44f);
+}
+
+.checkbox-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+

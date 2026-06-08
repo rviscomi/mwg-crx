@@ -266,7 +266,35 @@ async function applyPreview(opp, card) {
           return str.startsWith("<");
         };
 
+        // Helper to check if string is a list of HTML attributes
+        const isAttributeList = (str) => {
+          if (str.startsWith("<") || !str.includes("=") || str.includes("{")) return false;
+          try {
+            const testDiv = document.createElement("div");
+            testDiv.innerHTML = `<span ${str}></span>`;
+            const span = testDiv.firstElementChild;
+            return span && span.attributes.length > 0 && Array.from(span.attributes).every(attr => attr.name !== "undefined");
+          } catch (e) {
+            return false;
+          }
+        };
+
         try {
+          if (isAttributeList(code) && selector && selector !== "document") {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length > 0) {
+              const testDiv = document.createElement("div");
+              testDiv.innerHTML = `<span ${code}></span>`;
+              const attrs = Array.from(testDiv.firstElementChild.attributes);
+              elements.forEach(el => {
+                attrs.forEach(attr => {
+                  el.setAttribute(attr.name, attr.value);
+                });
+              });
+              return { success: true, message: `Applied attributes (${attrs.map(a => a.name).join(", ")}) to elements matching "${selector}".` };
+            }
+          }
+
           if (isCSS(code)) {
             // CSS Injection
             if (selector === "document" || code.includes("{")) {
@@ -368,6 +396,7 @@ async function applyPreview(opp, card) {
 }
 
 async function verifyOpportunity(opp, card) {
+  if (!card) return;
   const badgeVerify = card.querySelector(".badge-verify");
   const banner = card.querySelector(".opp-verification-banner");
   
@@ -403,10 +432,12 @@ DOM HTML Structure (Simplified):
 ${domInfo.dom}
 
 Your task is to analyze if the specific legacy issue described has been successfully resolved/modernized on the page.
-If the original code or issue (e.g. role="menu" or legacy element) has been replaced by the modernized code or patterns (or if the specific issue is no longer present), mark it as resolved.
-If the legacy issue is still active (e.g., if you still find elements matching the legacy pattern in the DOM), mark it as not resolved.`;
+If you need to interact with the page to trigger dynamic behavior, check styles, or test elements (e.g. clicking a button, hovering, checking computed styles of the target selector, checking console warnings/errors), you MUST call the appropriate browser tools (click_element, hover_element, type_text, get_element_info, get_console_logs).
+If the legacy issue is resolved and everything functions correctly without javascript errors, mark it as resolved.
+If the legacy issue is still active or fails to execute properly, mark it as not resolved.`;
 
-    const systemInstruction = `You are a strict code verification agent. Analyze the provided DOM state against the target legacy issue.
+    const systemInstruction = `You are a strict code verification agent. Analyze the provided DOM state and interact with the page if needed to verify the target legacy issue is resolved.
+You have tools to click elements, hover elements, type text, read computed CSS styles/attributes of selectors, and fetch console logs. Use them if the modernization fix requires user interaction, styling verification, or error checks.
     
 Output your verification report STRICTLY as a JSON object matching this schema:
 {
@@ -506,7 +537,7 @@ function saveOverride(opp) {
             found = true;
             const updatedContent = content.replace(regex, modernSnippet);
             res.setContent(updatedContent, true, (error) => {
-              if (error) {
+              if (error && error.code !== "OK") {
                 showToast(`Failed to save override: ${error.message || JSON.stringify(error)}`, "error");
                 resolve({ success: false, error: error.message || JSON.stringify(error) });
               } else {
@@ -517,7 +548,7 @@ function saveOverride(opp) {
           } else if (content && regexModern.test(content)) {
             found = true;
             res.setContent(content, true, (error) => {
-              if (error) {
+              if (error && error.code !== "OK") {
                 showToast(`Failed to save override: ${error.message || JSON.stringify(error)}`, "error");
                 resolve({ success: false, error: error.message || JSON.stringify(error) });
               } else {

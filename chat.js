@@ -4,6 +4,13 @@ let isChatGenerating = false;
 let isListening = false;
 let voiceWindowId = null;
 
+function unescapeHtmlEntities(str) {
+  return str
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
 // Highlight function for marked
 function highlightCode(code, lang) {
   if (!code) return "";
@@ -25,6 +32,20 @@ function highlightCode(code, lang) {
     .replace(/>/g, "&gt;");
 
   if (lang === "html" || lang === "xml") {
+    // Highlight script block contents (JS)
+    escaped = escaped.replace(/(&lt;script\b[\s\S]*?&gt;)([\s\S]*?)(&lt;\/script&gt;)/g, (match, openTag, scriptContent, closeTag) => {
+      const rawScript = unescapeHtmlEntities(scriptContent);
+      const highlightedScript = highlightCode(rawScript, "javascript");
+      return openTag + highlightedScript + closeTag;
+    });
+
+    // Highlight style block contents (CSS)
+    escaped = escaped.replace(/(&lt;style\b[\s\S]*?&gt;)([\s\S]*?)(&lt;\/style&gt;)/g, (match, openTag, styleContent, closeTag) => {
+      const rawStyle = unescapeHtmlEntities(styleContent);
+      const highlightedStyle = highlightCode(rawStyle, "css");
+      return openTag + highlightedStyle + closeTag;
+    });
+
     // Highlight tag blocks
     escaped = escaped.replace(/(&lt;[\s\S]*?&gt;)/g, (tag) => {
       let highlightedTag = tag;
@@ -230,6 +251,118 @@ async function onChatTabActive() {
   }
 }
 
+function renderSteps(steps, bubble, isGenerating) {
+  let detailsEl = bubble.querySelector(".dino-thought-container");
+  if (!detailsEl) {
+    detailsEl = document.createElement("details");
+    detailsEl.className = "dino-thought-container";
+    detailsEl.open = true;
+    bubble.insertBefore(detailsEl, bubble.firstChild);
+  }
+
+  let summaryEl = detailsEl.querySelector("summary");
+  if (!summaryEl) {
+    summaryEl = document.createElement("summary");
+    summaryEl.className = "dino-thought-summary";
+    detailsEl.appendChild(summaryEl);
+  }
+
+  const toolSteps = steps.filter(s => s.type === 'tool');
+  const completedCount = toolSteps.filter(s => s.status === 'completed' || s.status === 'failed').length;
+  const totalCount = toolSteps.length;
+
+  let summaryText = "";
+  if (isGenerating) {
+    summaryText = `Thinking... (${completedCount}/${totalCount} tools executed)`;
+  } else {
+    summaryText = `Dino's thought process (${totalCount} tools executed)`;
+  }
+  summaryEl.textContent = summaryText;
+
+  // Track expanded step indices to restore them after rendering
+  const expandedIndices = new Set();
+  const existingStepsList = detailsEl.querySelector(".dino-steps-list");
+  if (existingStepsList) {
+    existingStepsList.querySelectorAll(".dino-step").forEach((stepEl) => {
+      const idx = parseInt(stepEl.getAttribute("data-step-index"), 10);
+      const detailsEl = stepEl.querySelector(".dino-step-details");
+      if (detailsEl && !detailsEl.classList.contains("hidden")) {
+        expandedIndices.add(idx);
+      }
+    });
+  }
+
+  let stepsListEl = detailsEl.querySelector(".dino-steps-list");
+  if (!stepsListEl) {
+    stepsListEl = document.createElement("div");
+    stepsListEl.className = "dino-steps-list";
+    detailsEl.appendChild(stepsListEl);
+  }
+
+  stepsListEl.innerHTML = steps.map((step, idx) => {
+    let statusClass = step.status || 'running';
+    let icon = "⏳";
+    if (step.type === 'thought') {
+      icon = "💭";
+    } else if (step.status === 'completed') {
+      icon = "✅";
+    } else if (step.status === 'failed') {
+      icon = "❌";
+    }
+
+    let detailsHtml = "";
+    if (step.type === 'tool') {
+      const argsStr = step.args ? JSON.stringify(step.args, null, 2) : "";
+      let resultStr = "";
+      if (step.status === 'completed' && step.result !== undefined) {
+        if (typeof step.result === 'string') {
+          resultStr = step.result;
+        } else {
+          resultStr = JSON.stringify(step.result, null, 2);
+        }
+        
+        if (resultStr.length > 500) {
+          resultStr = resultStr.substring(0, 500) + "\n... (truncated)";
+        }
+      } else if (step.status === 'failed' && step.error) {
+        resultStr = `Error: ${step.error}`;
+      }
+
+      detailsHtml = `
+        <div class="dino-step-args">Args: <code>${escapeHtmlForChat(argsStr)}</code></div>
+        ${resultStr ? `<div class="dino-step-result">Result: <pre><code>${escapeHtmlForChat(resultStr)}</code></pre></div>` : ''}
+      `;
+    } else {
+      detailsHtml = `<div class="dino-step-thought-text">${escapeHtmlForChat(step.details)}</div>`;
+    }
+
+    const isThought = step.type === 'thought';
+    const isExpanded = isThought || expandedIndices.has(idx);
+    const detailsClass = isExpanded ? "dino-step-details" : "dino-step-details hidden";
+
+    return `
+      <div class="dino-step ${statusClass}" data-step-index="${idx}">
+        <div class="dino-step-header">
+          <span class="dino-step-icon">${icon}</span>
+          <span class="dino-step-title">${escapeHtmlForChat(step.title)}</span>
+        </div>
+        <div class="${detailsClass}">
+          ${detailsHtml}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  stepsListEl.querySelectorAll(".dino-step-header").forEach(header => {
+    header.addEventListener("click", () => {
+      const details = header.nextElementSibling;
+      if (details) {
+        details.classList.toggle("hidden");
+      }
+    });
+  });
+}
+
 function appendChatMessage(role, content, isTyping = false) {
   const chatMessages = document.getElementById("chat-messages");
   if (!chatMessages) return null;
@@ -246,9 +379,20 @@ function appendChatMessage(role, content, isTyping = false) {
     `;
     const bubble = msgDiv.querySelector(".message-bubble");
     if (isTyping) {
-      bubble.innerHTML = `<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
+      bubble.innerHTML = `
+        <div class="dino-response-content">
+          <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
     } else {
-      renderDinoResponse(content, bubble);
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "dino-response-content";
+      bubble.appendChild(contentDiv);
+      renderDinoResponse(content, contentDiv);
       addMessageActions(bubble, content);
     }
   } else {
@@ -295,21 +439,100 @@ async function handleSendChatMessage() {
   isAborted = false;
   currentAbortController = new AbortController();
 
-  try {
-    const { response, citations } = await runDinoChatAgent(message, chatHistory, (status) => {
-      // Update typing indicator with the current status message
-      const typingIndicator = modelMsgBubble.querySelector(".typing-indicator");
-      if (typingIndicator) {
-        typingIndicator.innerHTML = `
-          <div class="typing-dot"></div>
-          <div class="typing-dot"></div>
-          <div class="typing-dot"></div>
-          <span style="font-size: 11px; margin-left: 8px; color: var(--text-muted); font-family: var(--font-sans);">${status}</span>
-        `;
-      }
-    });
+  let chatSteps = [];
+  let streamedText = "";
 
-    renderDinoResponse(response, modelMsgBubble);
+  try {
+    const { response, citations } = await runDinoChatAgent(
+      message,
+      chatHistory,
+      (steps) => {
+        chatSteps = steps;
+        renderSteps(steps, modelMsgBubble, true);
+        
+        const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+        if (responseContent) {
+          const toolSteps = steps.filter(s => s.type === 'tool');
+          const runningTool = toolSteps.find(s => s.status === 'running');
+          
+          if (toolSteps.length > 0) {
+            // Clear any streamed final text because we are running tools
+            streamedText = ""; 
+            
+            // Clear the HTML of the main response bubble
+            responseContent.innerHTML = "";
+            
+            let typingIndicator = document.createElement("div");
+            typingIndicator.className = "typing-indicator";
+            responseContent.appendChild(typingIndicator);
+            
+            const statusText = runningTool ? runningTool.title : "Thinking...";
+            
+            typingIndicator.innerHTML = `
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <span style="font-size: 11px; margin-left: 8px; color: var(--text-muted); font-family: var(--font-sans);">${statusText}</span>
+            `;
+          }
+        }
+        
+        const chatMessages = document.getElementById("chat-messages");
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      },
+      (textChunk) => {
+        streamedText += textChunk;
+        
+        const { thoughts, userContent } = parseStreamContent(streamedText);
+        
+        // Render thoughts in the thought steps log if present
+        if (thoughts) {
+          const streamingSteps = [
+            {
+              type: 'thought',
+              title: 'Thinking',
+              details: thoughts,
+              status: 'completed'
+            }
+          ];
+          renderSteps(streamingSteps, modelMsgBubble, true);
+        } else {
+          // Hide thought container if it's empty
+          const detailsEl = modelMsgBubble.querySelector(".dino-thought-container");
+          if (detailsEl && !detailsEl.querySelector(".dino-steps-list")?.children.length) {
+            detailsEl.remove();
+          }
+        }
+        
+        const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+        if (responseContent) {
+          const typingIndicator = responseContent.querySelector(".typing-indicator");
+          if (typingIndicator) {
+            typingIndicator.remove();
+          }
+          
+          if (userContent) {
+            renderDinoResponse(userContent, responseContent);
+          } else {
+            responseContent.innerHTML = "";
+          }
+        }
+        const chatMessages = document.getElementById("chat-messages");
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    );
+
+    // Collapse the thought container
+    const thoughtContainer = modelMsgBubble.querySelector(".dino-thought-container");
+    if (thoughtContainer) {
+      thoughtContainer.removeAttribute("open");
+      renderSteps(chatSteps, modelMsgBubble, false);
+    }
+
+    const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+    if (responseContent) {
+      renderDinoResponse(response, responseContent);
+    }
 
     chatHistory.push({ role: "user", content: message });
     chatHistory.push({ role: "model", content: response });
@@ -363,11 +586,21 @@ async function handleSendChatMessage() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
   } catch (err) {
-    if (err.name === 'AbortError' || isAborted) {
-      modelMsgBubble.innerHTML = `<span style="color: var(--warning-color); font-style: italic;">Dino was stopped in his tracks! 🦖🐾</span>`;
-    } else {
-      console.error(err);
-      modelMsgBubble.textContent = `Error: ${err.message}`;
+    // Collapse thought process container on error
+    const thoughtContainer = modelMsgBubble.querySelector(".dino-thought-container");
+    if (thoughtContainer) {
+      thoughtContainer.removeAttribute("open");
+      renderSteps(chatSteps, modelMsgBubble, false);
+    }
+
+    const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+    if (responseContent) {
+      if (err.name === 'AbortError' || isAborted) {
+        responseContent.innerHTML = `<span style="color: var(--warning-color); font-style: italic;">Dino was stopped in his tracks! 🦖🐾</span>`;
+      } else {
+        console.error(err);
+        responseContent.textContent = `Error: ${err.message}`;
+      }
     }
   } finally {
     isChatGenerating = false;
@@ -493,4 +726,26 @@ function addMessageActions(bubble, rawContent) {
 
   actionsDiv.appendChild(copyBtn);
   bubble.appendChild(actionsDiv);
+}
+
+function parseStreamContent(text) {
+  let thoughts = "";
+  let userContent = "";
+  
+  const thoughtStart = text.indexOf("<thought>");
+  if (thoughtStart !== -1) {
+    const thoughtEnd = text.indexOf("</thought>", thoughtStart);
+    if (thoughtEnd !== -1) {
+      thoughts = text.substring(thoughtStart + 9, thoughtEnd);
+      userContent = text.substring(thoughtEnd + 10);
+    } else {
+      thoughts = text.substring(thoughtStart + 9);
+      userContent = "";
+    }
+  } else {
+    thoughts = "";
+    userContent = text;
+  }
+  
+  return { thoughts, userContent };
 }

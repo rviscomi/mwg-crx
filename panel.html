@@ -219,6 +219,28 @@
               </select>
             </div>
             <div class="form-group">
+              <label>Agent Capabilities</label>
+              <div class="capabilities-checkbox-group">
+                <label class="checkbox-container">
+                  <input type="checkbox" id="settings-cap-interaction" checked>
+                  <span class="checkbox-label">Interactive Testing (Click, Type, Hover, Scroll, Keypress)</span>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="settings-cap-logs" checked>
+                  <span class="checkbox-label">Read Console Logs (Diagnostics & Error Audits)</span>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="settings-cap-preview" checked>
+                  <span class="checkbox-label">Inject Live Previews (Visual Verification)</span>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="settings-cap-override" checked>
+                  <span class="checkbox-label">Save Local Overrides (Disk Writes)</span>
+                </label>
+              </div>
+              <span class="help-text">Disabling capabilities removes their tools from Dino, reducing API execution turns and response times.</span>
+            </div>
+            <div class="form-group">
               <label for="settings-url">Guidance Base URL</label>
               <input type="url" id="settings-url" value="https://mwg-cf.rviscomi-555.workers.dev/" required>
               <span class="help-text">URL to retrieve Compiled Use Case index and guides markdown folder.</span>
