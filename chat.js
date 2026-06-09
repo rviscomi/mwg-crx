@@ -224,10 +224,110 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 let hasInitializedChat = false;
+let isAskDinoPending = false;
+let pendingOpportunity = null;
+
+function askDinoAboutOpportunity(opp) {
+  isAskDinoPending = true;
+  pendingOpportunity = opp;
+  
+  // Switch to the chat tab
+  const chatTab = document.querySelector('.tab-item[data-tab="chat"]');
+  if (chatTab) {
+    chatTab.click();
+  }
+}
+
+async function startChatWithOpportunity(opp) {
+  if (isChatGenerating) {
+    abortAnalysis();
+  }
+  
+  hasInitializedChat = true;
+
+  const chatMessages = document.getElementById("chat-messages");
+  if (chatMessages) {
+    chatMessages.innerHTML = "";
+  }
+
+  const modelMsgBubble = appendChatMessage("model", "", true);
+
+  try {
+    const greeting = await runDinoAuditResultGreeting(opp);
+    
+    const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+    if (responseContent) {
+      responseContent.innerHTML = "";
+      renderDinoResponse(greeting, responseContent);
+    }
+    
+    addMessageActions(modelMsgBubble, greeting);
+
+    chatHistory = [
+      {
+        role: "user",
+        content: `I have a question about this modernization audit result:
+Title: ${opp.title}
+Impact: ${opp.impact}
+Target: ${opp.target || 'document'}
+Description: ${opp.description}
+${opp.originalCode ? `Legacy Code:\n${opp.originalCode}\n` : ''}
+${opp.modernizedCode ? `Modernized Code:\n${opp.modernizedCode}\n` : ''}
+${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
+      },
+      {
+        role: "model",
+        content: greeting
+      }
+    ];
+
+  } catch (err) {
+    console.error("Failed to start chat with opportunity:", err);
+    const fallback = `Rawr! Dino here! 🦖 I see you have a question about the modernization opportunity: **${opp.title}** (Target: \`${opp.target || 'document'}\`). Let's get this prehistoric pattern modernised! What would you like to know?\n\n[🛠️ How do I fix this?](suggest:How do I fix this modernization issue?) [❓ Why is this an issue?](suggest:Why is this considered a legacy issue?) [🧪 How should I test it?](suggest:How do I test if this is successfully fixed?)`;
+    
+    const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+    if (responseContent) {
+      responseContent.innerHTML = "";
+      renderDinoResponse(fallback, responseContent);
+    }
+    addMessageActions(modelMsgBubble, fallback);
+    
+    chatHistory = [
+      {
+        role: "user",
+        content: `I have a question about this modernization audit result:
+Title: ${opp.title}
+Impact: ${opp.impact}
+Target: ${opp.target || 'document'}
+Description: ${opp.description}
+${opp.originalCode ? `Legacy Code:\n${opp.originalCode}\n` : ''}
+${opp.modernizedCode ? `Modernized Code:\n${opp.modernizedCode}\n` : ''}
+${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
+      },
+      {
+        role: "model",
+        content: fallback
+      }
+    ];
+  }
+
+  if (chatMessages) {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
 async function onChatTabActive() {
   const chatInput = document.getElementById("chat-input");
   if (chatInput) {
     chatInput.focus();
+  }
+
+  if (isAskDinoPending && pendingOpportunity) {
+    const opp = pendingOpportunity;
+    isAskDinoPending = false;
+    pendingOpportunity = null;
+    await startChatWithOpportunity(opp);
+    return;
   }
 
   if (hasInitializedChat) return;
@@ -458,7 +558,7 @@ async function handleSendChatMessage() {
           const toolSteps = steps.filter(s => s.type === 'tool');
           const runningTool = toolSteps.find(s => s.status === 'running');
           
-          if (toolSteps.length > 0) {
+          if (runningTool) {
             // Clear any streamed final text because we are running tools
             streamedText = ""; 
             
@@ -469,7 +569,7 @@ async function handleSendChatMessage() {
             typingIndicator.className = "typing-indicator";
             responseContent.appendChild(typingIndicator);
             
-            const statusText = runningTool ? runningTool.title : "Thinking...";
+            const statusText = runningTool.title || "Thinking...";
             
             typingIndicator.innerHTML = `
               <div class="typing-dot"></div>

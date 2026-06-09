@@ -1,5 +1,9 @@
 // Global drawer variables
 let drawer, openBtn, scroller, sheet;
+let latestReports = {
+  audit: null,
+  inspect: null
+};
 
 // Main DevTools Panel Controller
 document.addEventListener("DOMContentLoaded", async () => {
@@ -132,11 +136,12 @@ function bindUIEvents() {
 
   document.getElementById("btn-run-audit").addEventListener("click", runAudit);
   document.getElementById("btn-run-inspect").addEventListener("click", runInspect);
-  document.getElementById("btn-run-interactive").addEventListener("click", runInteractiveAudit);
   
   document.getElementById("btn-stop-audit").addEventListener("click", abortAnalysis);
   document.getElementById("btn-stop-inspect").addEventListener("click", abortAnalysis);
-  document.getElementById("btn-stop-interactive").addEventListener("click", abortAnalysis);
+
+  document.getElementById("btn-export-audit").addEventListener("click", () => handleCopyReport("audit"));
+  document.getElementById("btn-export-inspect").addEventListener("click", () => handleCopyReport("inspect"));
 }
 
 function abortAnalysis() {
@@ -168,6 +173,8 @@ async function runAudit() {
   logger.classList.remove("completed");
   logger.querySelector(".logger-header span:last-child").textContent = "Running analysis...";
   results.classList.add("hidden");
+  document.getElementById("btn-export-audit").classList.add("hidden");
+  latestReports.audit = null;
 
   const focus = document.getElementById("audit-type").value;
   let focusConstraint = "";
@@ -199,8 +206,10 @@ Rules for browser compatibility:
     const systemInstruction = (focus === "full") ? GENERIC_SYSTEM_INSTRUCTION : FOCUSED_SYSTEM_INSTRUCTION;
     const report = await runGeminiAgent("audit", startPrompt, systemInstruction);
 
-    renderOpportunities(results, report);
+    latestReports.audit = report;
+    renderOpportunities(results, report, true);
     results.classList.remove("hidden");
+    document.getElementById("btn-export-audit").classList.remove("hidden");
     logger.classList.add("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analysis completed!";
     showToast("Page audit completed successfully!", "success");
@@ -245,6 +254,8 @@ async function runInspect() {
     logger.classList.remove("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analyzing element...";
     results.classList.add("hidden");
+    document.getElementById("btn-export-inspect").classList.add("hidden");
+    latestReports.inspect = null;
     preview.classList.remove("hidden");
     previewCode.textContent = `<${inspected.tagName}${inspected.class ? ' class="' + inspected.class + '"' : ""}>`;
 
@@ -268,8 +279,10 @@ Rules for browser compatibility:
 
     const report = await runGeminiAgent("inspect", startPrompt, INSPECT_SYSTEM_INSTRUCTION);
 
+    latestReports.inspect = report;
     renderOpportunities(results, report);
     results.classList.remove("hidden");
+    document.getElementById("btn-export-inspect").classList.remove("hidden");
     logger.classList.add("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analysis completed!";
     showToast("Selected element analysis completed!", "success");
@@ -284,67 +297,41 @@ Rules for browser compatibility:
   }
 }
 
-// Action: Targeted Interactive Audit
-async function runInteractiveAudit() {
-  const logger = document.getElementById("interactive-logger");
-  const results = document.getElementById("interactive-results");
-  const btn = document.getElementById("btn-run-interactive");
-  const stopBtn = document.getElementById("btn-stop-interactive");
-  const queryInput = document.getElementById("interactive-query");
+
+async function handleCopyReport(type) {
+  const report = latestReports[type];
+  if (!report) {
+    showToast("No report available to copy.", "warning");
+    return;
+  }
   
-  const query = queryInput.value.trim();
-  if (!query) {
-    showToast("Please enter a custom audit request.", "warning");
-    return;
+  const markdown = generateMarkdownReport(report);
+  const success = await copyToClipboard(markdown);
+  if (success) {
+    showToast("Modernization report copied to clipboard!", "success");
+  } else {
+    showToast("Failed to copy report to clipboard.", "error");
   }
+}
 
-  if (!config.apiKey) {
-    showToast("Please set your Gemini API Key in the Settings tab first!", "warning");
-    return;
-  }
-
-  isAborted = false;
-  currentAbortController = new AbortController();
-
-  btn.disabled = true;
-  stopBtn.classList.remove("hidden");
-  logger.classList.remove("hidden");
-  logger.classList.remove("completed");
-  logger.querySelector(".logger-header span:last-child").textContent = "Running custom analysis...";
-  results.classList.add("hidden");
-
+async function copyToClipboard(text) {
   try {
-    const startPrompt = `The user has requested a targeted modernization audit for a specific part or aspect of the page.
-User Request: "${query}"
-
-Your task is to:
-1. Inspect the page DOM structure or target element.
-2. Locate the specific parts, elements, or systems of the page relevant to the User's Request.
-3. Use semantic search (search_use_cases) to locate guidelines that address modernizing these elements.
-4. Generate a modernization report containing opportunities only for the systems/elements matching the user's request.
-If you find no relevant legacy implementations matching the request, or no guidelines apply, return an empty array [].
-
-Current Browser Support Policy (Baseline Target): ${config.baselineTarget}
-
-Rules for browser compatibility:
-- If the target is 'widely-available', you MUST check if the recommended features are Baseline widely available. If a feature is NOT widely available (such as Invoker Commands or Popovers), you MUST recommend and include the fallback code or polyfill instructions specified in the matching guides.
-- If the target is 'newly-available', you only need to include fallbacks for features that are experimental/non-standard.
-- If the target is 'none', you do not need to include any fallback code.`;
-
-    const report = await runGeminiAgent("interactive", startPrompt, GENERIC_SYSTEM_INSTRUCTION);
-
-    renderOpportunities(results, report);
-    results.classList.remove("hidden");
-    logger.classList.add("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analysis completed!";
-    showToast("Custom audit completed successfully!", "success");
+    await navigator.clipboard.writeText(text);
+    return true;
   } catch (err) {
-    appendLog("interactive", `Error: ${err.message}`, "system");
-    showToast(`Audit failed: ${err.message}`, "error");
-    logger.classList.add("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analysis failed";
-  } finally {
-    btn.disabled = false;
-    stopBtn.classList.add("hidden");
+    console.error("Clipboard copy failed, trying document.execCommand:", err);
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return success;
+    } catch (err2) {
+      console.error("Fallback copy failed:", err2);
+      return false;
+    }
   }
 }

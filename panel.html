@@ -25,9 +25,7 @@
               <li class="tab-item" data-tab="inspect">
                 <span class="nav-icon">🎯</span> Element Inspector
               </li>
-              <li class="tab-item" data-tab="interactive">
-                <span class="nav-icon">💬</span> Interactive Audit
-              </li>
+
               <li class="tab-item" data-tab="settings">
                 <span class="nav-icon">⚙️</span> Settings
               </li>
@@ -74,6 +72,13 @@
             </div>
             <button id="btn-run-audit" class="btn btn-primary">Start Page Audit</button>
             <button id="btn-stop-audit" class="btn btn-danger hidden">Stop Audit</button>
+            <button id="btn-export-audit" class="btn btn-secondary hidden">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy as Markdown</span>
+            </button>
           </div>
           <div class="status-logger hidden" id="audit-logger">
             <div class="logger-header">
@@ -96,6 +101,13 @@
           <div class="control-row">
             <button id="btn-run-inspect" class="btn btn-primary">Analyze Selected Element</button>
             <button id="btn-stop-inspect" class="btn btn-danger hidden">Stop Analysis</button>
+            <button id="btn-export-inspect" class="btn btn-secondary hidden">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy as Markdown</span>
+            </button>
           </div>
           <div class="inspected-preview-box hidden" id="inspect-preview">
             <span class="label">Target Element:</span>
@@ -113,30 +125,6 @@
           </div>
         </section>
 
-        <!-- Interactive Audit View -->
-        <section id="view-interactive" class="tab-view">
-          <header class="view-header">
-            <h2>Targeted Interactive Audit</h2>
-            <p class="description">Instruct the agent to search for specific elements or features on the page (e.g. "check how our images are loaded" or "modernize our modal popup overlay").</p>
-          </header>
-          <div class="interactive-form-row">
-            <textarea id="interactive-query" placeholder="E.g., Check how modals are implemented on this page and recommend improvements." rows="3"></textarea>
-          </div>
-          <div class="control-row">
-            <button id="btn-run-interactive" class="btn btn-primary">Run Custom Audit</button>
-            <button id="btn-stop-interactive" class="btn btn-danger hidden">Stop Audit</button>
-          </div>
-          <div class="status-logger hidden" id="interactive-logger">
-            <div class="logger-header">
-              <span class="spinner"></span>
-              <span class="logger-status-text">Analyzing page elements...</span>
-            </div>
-            <div class="logger-content" id="interactive-log-lines"></div>
-          </div>
-          <div class="results-container hidden" id="interactive-results">
-            <!-- Dynamic opportunities list -->
-          </div>
-        </section>
 
         <!-- Chat View -->
         <section id="view-chat" class="tab-view active">

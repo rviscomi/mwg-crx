@@ -1,5 +1,5 @@
 // Opportunity Cards HTML Renderer
-function renderOpportunities(container, list) {
+function renderOpportunities(container, list, filterTraining = false) {
   container.innerHTML = "";
 
   if (!list || list.length === 0) {
@@ -28,7 +28,7 @@ function renderOpportunities(container, list) {
     return weightB - weightA;
   });
 
-  sortedList.forEach((opp, index) => {
+  const renderCard = (opp, index) => {
     if (opp.target) {
       opp.target = normalizeSelector(opp.target);
     }
@@ -57,8 +57,6 @@ function renderOpportunities(container, list) {
       targetHtml = `<a class="target-link-btn" href="#" data-target="${escapeHtml(opp.target)}"><code>${escapeHtml(opp.target)}</code></a>`;
     }
 
-
-
     card.innerHTML = `
       <div class="opp-header">
         <div class="opp-title-group">
@@ -71,7 +69,6 @@ function renderOpportunities(container, list) {
       </div>
       <div class="opp-body">
         <p class="opp-description">${escapeHtml(opp.description)}</p>
-
 
         <div class="opp-verification-banner hidden">
           <span class="verify-icon"></span>
@@ -94,16 +91,19 @@ function renderOpportunities(container, list) {
         </div>
         ` : ""}
 
-        ${opp.modernizedCode ? `
         <div class="opp-actions-row">
+          ${opp.modernizedCode ? `
           <button class="btn btn-secondary btn-apply-preview" ${isNetwork ? "disabled title='Cannot apply preview to network assets'" : ""}>
             <span>✨ Apply Preview</span>
           </button>
           <button class="btn btn-secondary btn-save-override" ${!opp.originalCode ? "disabled title='Original legacy snippet required'" : ""}>
             <span>💾 Save to Overrides</span>
           </button>
+          ` : ""}
+          <button class="btn btn-secondary btn-ask-dino">
+            <span>🦖 Ask Dino</span>
+          </button>
         </div>
-        ` : ""}
 
         <div class="opp-meta-row">
           <span>Target: ${targetHtml}</span>
@@ -128,7 +128,6 @@ function renderOpportunities(container, list) {
           
           let uc = useCasesCache.find(u => u.id === guideId);
           if (!uc && guideId) {
-            // Self-healing: Check if the guideId starts with any valid use case ID
             const matchingUcs = useCasesCache
               .filter(u => guideId.startsWith(u.id))
               .sort((a, b) => b.id.length - a.id.length);
@@ -142,7 +141,6 @@ function renderOpportunities(container, list) {
           }
 
           const category = uc ? uc.category : "user-experience";
-          // Direct developers to GitHub directly for readable rendering
           const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${guideId}.md${anchor}`;
           chrome.tabs.create({ url });
           showToast(`Opening GitHub guide for ${guideId}...`, "success");
@@ -151,8 +149,6 @@ function renderOpportunities(container, list) {
         }
       });
     }
-
-
 
     const targetLink = card.querySelector(".target-link-btn");
     if (targetLink && targetLink.dataset.target) {
@@ -210,10 +206,70 @@ function renderOpportunities(container, list) {
       });
     }
 
-    container.appendChild(card);
+    const btnAskDino = card.querySelector(".btn-ask-dino");
+    if (btnAskDino) {
+      btnAskDino.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        askDinoAboutOpportunity(opp);
+      });
+    }
 
+    return card;
+  };
 
-  });
+  const guideOpps = sortedList.filter(opp => opp.useCaseId);
+  const trainingOpps = sortedList.filter(opp => !opp.useCaseId);
+
+  if (filterTraining && trainingOpps.length > 0) {
+    if (guideOpps.length === 0) {
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "opp-card";
+      infoDiv.innerHTML = `
+        <div class="opp-header" style="cursor: default;">
+          <div class="opp-title-group">
+            <span class="opp-icon">🎉</span>
+            <span class="opp-title">No legacy issues found matching official guides!</span>
+          </div>
+        </div>
+      `;
+      container.appendChild(infoDiv);
+    } else {
+      guideOpps.forEach((opp, index) => {
+        const card = renderCard(opp, index);
+        container.appendChild(card);
+      });
+    }
+
+    const btnShowMore = document.createElement("button");
+    btnShowMore.className = "btn btn-secondary show-more-training-btn";
+    btnShowMore.style.margin = "16px auto";
+    btnShowMore.style.display = "block";
+    btnShowMore.style.width = "calc(100% - 24px)";
+    btnShowMore.style.textAlign = "center";
+    btnShowMore.innerHTML = `Show ${trainingOpps.length} more recommendation${trainingOpps.length === 1 ? '' : 's'} from training knowledge`;
+
+    const trainingWrapper = document.createElement("div");
+    trainingWrapper.className = "training-opportunities-wrapper hidden";
+
+    trainingOpps.forEach((opp, index) => {
+      const card = renderCard(opp, guideOpps.length + index);
+      trainingWrapper.appendChild(card);
+    });
+
+    btnShowMore.addEventListener("click", () => {
+      trainingWrapper.classList.remove("hidden");
+      btnShowMore.remove();
+    });
+
+    container.appendChild(btnShowMore);
+    container.appendChild(trainingWrapper);
+  } else {
+    sortedList.forEach((opp, index) => {
+      const card = renderCard(opp, index);
+      container.appendChild(card);
+    });
+  }
 }
 
 function escapeHtml(str) {
@@ -590,4 +646,130 @@ function saveOverride(opp) {
       });
     });
   });
+}
+
+function generateMarkdownReport(list) {
+  if (!list || list.length === 0) {
+    return "# Page Modernization Audit Report\n\n🎉 **No legacy issues found! Your site is looking modern.**\n";
+  }
+
+  const guideOpps = list.filter(opp => opp.useCaseId);
+  const trainingOpps = list.filter(opp => !opp.useCaseId);
+
+  let md = "# Page Modernization Audit Report\n\n";
+  md += `*Generated on ${new Date().toLocaleString()}*\n`;
+  md += `*Baseline Compatibility Target*: ${typeof config !== 'undefined' ? (config.baselineTarget || "Not configured") : "Not configured"}\n\n`;
+
+  md += `## Summary\n`;
+  md += `Found **${list.length}** modernization opportunit${list.length === 1 ? 'y' : 'ies'} (`;
+  md += `**${guideOpps.length}** guide-based, **${trainingOpps.length}** from training knowledge).\n\n`;
+
+  if (guideOpps.length > 0) {
+    md += `## Modernization Recommendations (Guide-based)\n\n`;
+    md += `| Opportunity | Impact | Target Element | Guide / Use Case |\n`;
+    md += `| :--- | :--- | :--- | :--- |\n`;
+    
+    guideOpps.forEach(opp => {
+      const guideLink = opp.useCaseId ? `[${opp.useCaseId}](https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${getGuideCategory(opp.useCaseId)}/${opp.useCaseId}.md${opp.guideAnchor ? '#' + opp.guideAnchor : ''})` : 'Gemini training data';
+      md += `| ${opp.title} | **${opp.impact}** | \`${opp.target || 'document'}\` | ${guideLink} |\n`;
+    });
+    
+    md += `\n---\n\n`;
+
+    guideOpps.forEach((opp, index) => {
+      md += `### ${index + 1}. ${opp.title}\n\n`;
+      md += `- **Impact**: ${opp.impact.toUpperCase()}\n`;
+      md += `- **Target Element**: \`${opp.target || 'document'}\`\n`;
+      if (opp.useCaseId) {
+        const cat = getGuideCategory(opp.useCaseId);
+        md += `- **Guide ID**: [${opp.useCaseId}](https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${cat}/${opp.useCaseId}.md${opp.guideAnchor ? '#' + opp.guideAnchor : ''})\n`;
+      } else {
+        md += `- **Source**: Gemini training data\n`;
+      }
+      md += `\n#### Description\n${opp.description}\n\n`;
+
+      if (opp.originalCode) {
+        let lang = 'html';
+        const code = opp.originalCode.trim();
+        if (code.startsWith('<')) lang = 'html';
+        else if (code.includes('{') || (code.includes(':') && code.includes(';'))) lang = 'css';
+        else lang = 'javascript';
+        
+        md += `#### Legacy / Current Code\n`;
+        md += `\`\`\`${lang}\n${opp.originalCode}\n\`\`\`\n\n`;
+      }
+
+      if (opp.modernizedCode) {
+        let lang = 'html';
+        const code = opp.modernizedCode.trim();
+        if (code.startsWith('<')) lang = 'html';
+        else if (code.includes('{') || (code.includes(':') && code.includes(';'))) lang = 'css';
+        else lang = 'javascript';
+        
+        md += `#### Modernized Solution\n`;
+        md += `\`\`\`${lang}\n${opp.modernizedCode}\n\`\`\`\n\n`;
+      }
+
+      md += `---\n\n`;
+    });
+  }
+
+  if (trainingOpps.length > 0) {
+    md += `## Recommendations from Training Knowledge\n\n`;
+    md += `| Opportunity | Impact | Target Element | Source |\n`;
+    md += `| :--- | :--- | :--- | :--- |\n`;
+    
+    trainingOpps.forEach(opp => {
+      md += `| ${opp.title} | **${opp.impact}** | \`${opp.target || 'document'}\` | Gemini training data |\n`;
+    });
+    
+    md += `\n---\n\n`;
+
+    trainingOpps.forEach((opp, index) => {
+      md += `### ${index + 1}. ${opp.title}\n\n`;
+      md += `- **Impact**: ${opp.impact.toUpperCase()}\n`;
+      md += `- **Target Element**: \`${opp.target || 'document'}\`\n`;
+      md += `- **Source**: Gemini training data\n`;
+      md += `\n#### Description\n${opp.description}\n\n`;
+
+      if (opp.originalCode) {
+        let lang = 'html';
+        const code = opp.originalCode.trim();
+        if (code.startsWith('<')) lang = 'html';
+        else if (code.includes('{') || (code.includes(':') && code.includes(';'))) lang = 'css';
+        else lang = 'javascript';
+        
+        md += `#### Legacy / Current Code\n`;
+        md += `\`\`\`${lang}\n${opp.originalCode}\n\`\`\`\n\n`;
+      }
+
+      if (opp.modernizedCode) {
+        let lang = 'html';
+        const code = opp.modernizedCode.trim();
+        if (code.startsWith('<')) lang = 'html';
+        else if (code.includes('{') || (code.includes(':') && code.includes(';'))) lang = 'css';
+        else lang = 'javascript';
+        
+        md += `#### Modernized Solution\n`;
+        md += `\`\`\`${lang}\n${opp.modernizedCode}\n\`\`\`\n\n`;
+      }
+
+      md += `---\n\n`;
+    });
+  }
+
+  return md;
+}
+
+function getGuideCategory(guideId) {
+  let uc = typeof useCasesCache !== 'undefined' ? useCasesCache.find(u => u.id === guideId) : null;
+  if (!uc && guideId && typeof useCasesCache !== 'undefined') {
+    const matchingUcs = useCasesCache
+      .filter(u => guideId.startsWith(u.id))
+      .sort((a, b) => b.id.length - a.id.length);
+    if (matchingUcs.length > 0) {
+      uc = matchingUcs[0];
+    }
+  }
+  return uc ? uc.category : "user-experience";
 }

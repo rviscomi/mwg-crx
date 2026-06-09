@@ -765,28 +765,7 @@ body {
   to { opacity: 0; transform: translateY(-10px); }
 }
 
-.interactive-form-row {
-  width: 100%;
-}
 
-.interactive-form-row textarea {
-  width: 100%;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 12px 16px;
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  resize: vertical;
-  transition: all 0.2s ease;
-}
-
-.interactive-form-row textarea:focus {
-  border-color: var(--accent-color);
-  outline: none;
-  box-shadow: 0 0 6px rgba(99,102,241,0.2);
-}
 
 /* Chat Container Styles */
 .chat-container {
