@@ -382,6 +382,24 @@ body {
   opacity: 0.9;
 }
 
+.btn-danger {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn-warning {
+  background-color: var(--warning-color);
+  color: #121318;
+}
+
+.btn-warning:hover {
+  opacity: 0.9;
+}
+
 /* Status Logger */
 .status-logger {
   background-color: var(--bg-secondary);
@@ -399,6 +417,17 @@ body {
   align-items: center;
   gap: 12px;
   font-weight: 600;
+}
+
+.logger-timer {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+  background-color: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
 }
 
 .spinner {

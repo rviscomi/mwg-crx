@@ -72,6 +72,7 @@
             </div>
             <button id="btn-run-audit" class="btn btn-primary">Start Page Audit</button>
             <button id="btn-stop-audit" class="btn btn-danger hidden">Stop Audit</button>
+            <button id="btn-answer-now-audit" class="btn btn-warning hidden">Answer Now</button>
             <button id="btn-export-audit" class="btn btn-secondary hidden">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -84,6 +85,7 @@
             <div class="logger-header">
               <span class="spinner"></span>
               <span class="logger-status-text">Running analysis...</span>
+              <span class="logger-timer" id="audit-timer">0.0s</span>
             </div>
             <div class="logger-content" id="audit-log-lines"></div>
           </div>
@@ -101,6 +103,7 @@
           <div class="control-row">
             <button id="btn-run-inspect" class="btn btn-primary">Analyze Selected Element</button>
             <button id="btn-stop-inspect" class="btn btn-danger hidden">Stop Analysis</button>
+            <button id="btn-answer-now-inspect" class="btn btn-warning hidden">Answer Now</button>
             <button id="btn-export-inspect" class="btn btn-secondary hidden">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -117,6 +120,7 @@
             <div class="logger-header">
               <span class="spinner"></span>
               <span class="logger-status-text">Analyzing element...</span>
+              <span class="logger-timer" id="inspect-timer">0.0s</span>
             </div>
             <div class="logger-content" id="inspect-log-lines"></div>
           </div>
@@ -192,11 +196,17 @@
               <select id="settings-model">
                 <option value="gemini-3.5-flash" selected>gemini-3.5-flash (Fast, recommended)</option>
                 <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Slower, deeper analysis)</option>
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview (Gemini 3.0 Flash)</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label for="settings-tier">Gemini API Plan Tier</label>
+              <select id="settings-tier">
+                <option value="free" selected>Free Tier (15 RPM / 1M TPM)</option>
+                <option value="pay-as-you-go">Pay-As-You-Go Tier (360 RPM / 4M TPM)</option>
+              </select>
+              <span class="help-text">Select your Google AI Studio plan to optimize adaptive request pacing and prevent rate limits.</span>
             </div>
             <div class="form-group">
               <label for="settings-baseline">Baseline Compatibility Target</label>
@@ -234,7 +244,6 @@
               <span class="help-text">URL to retrieve Compiled Use Case index and guides markdown folder.</span>
             </div>
             <div class="form-group">
-              <button type="submit" class="btn btn-success">Save Configuration</button>
               <button type="button" id="btn-reset-db" class="btn btn-secondary">Refresh Guides Cache</button>
             </div>
           </form>

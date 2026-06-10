@@ -6,7 +6,8 @@ async function getPageDOM() {
   const result = await chrome.scripting.executeScript({
     target: { tabId: tabId },
     func: () => {
-      const simplify = (node) => {
+      const simplify = (node, depth = 0) => {
+        if (depth > 12) return null; // Prevent deeply nested stacks / huge trees
         if (node.nodeType === Node.TEXT_NODE) return null;
         if (node.nodeType === Node.ELEMENT_NODE) {
           const tag = node.tagName.toLowerCase();
@@ -19,9 +20,21 @@ async function getPageDOM() {
           if (node.getAttribute("type")) info.type = node.getAttribute("type");
           if (node.getAttribute("popover") !== null) info.popover = "";
           
-          const children = Array.from(node.childNodes)
-            .map(simplify)
+          let children = Array.from(node.childNodes)
+            .map(c => simplify(c, depth + 1))
             .filter(Boolean);
+          
+          // Child Capping (Sampling repetitive structures like lists/grids)
+          if (children.length > 10) {
+            const originalLength = children.length;
+            children = children.slice(0, 8);
+            children.push({
+              tag: "div",
+              class: "dino-truncated-placeholder",
+              note: `... truncated ${originalLength - 8} similar sibling nodes ...`
+            });
+          }
+
           if (children.length > 0) info.children = children;
           return info;
         }
@@ -239,45 +252,58 @@ async function getElementInfo(selector, computedProperties = []) {
     target: { tabId: tabId },
     world: "MAIN",
     func: (sel, props) => {
-      const el = document.querySelector(sel);
-      if (!el) return { exists: false };
-      const computed = {};
-      const styles = window.getComputedStyle(el);
-      const propsToGet = props && props.length > 0 ? props : [
-        'display', 'position', 'visibility', 'opacity', 'zIndex',
-        'scrollbarColor', 'scrollbarWidth', 'colorScheme',
-        'overflow', 'width', 'height', 'top', 'left'
-      ];
-      propsToGet.forEach(p => {
-        computed[p] = styles[p];
-      });
-      const attrs = {};
-      for (const attr of el.attributes) {
-        attrs[attr.name] = attr.value;
-      }
-       return {
-        exists: true,
-        tagName: el.tagName.toLowerCase(),
-        id: el.id,
-        className: el.className,
-        attributes: attrs,
-        outerHTML: el.outerHTML.substring(0, 5000), // Cap size to avoid RPC issues
-        innerText: el.innerText.substring(0, 1000),
-        computedStyle: computed,
-        geometry: {
-          scrollLeft: el.scrollLeft,
-          scrollTop: el.scrollTop,
-          scrollWidth: el.scrollWidth,
-          scrollHeight: el.scrollHeight,
-          clientWidth: el.clientWidth,
-          clientHeight: el.clientHeight,
-          offsetWidth: el.offsetWidth,
-          offsetHeight: el.offsetHeight,
-          rect: (() => {
-            const r = el.getBoundingClientRect();
-            return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
-          })()
+      const elements = Array.from(document.querySelectorAll(sel));
+      if (elements.length === 0) return { exists: false, totalMatches: 0, matches: [] };
+
+      const getSingleElementDetails = (el) => {
+        const computed = {};
+        const styles = window.getComputedStyle(el);
+        const propsToGet = props && props.length > 0 ? props : [
+          'display', 'position', 'visibility', 'opacity', 'zIndex',
+          'scrollbarColor', 'scrollbarWidth', 'colorScheme',
+          'overflow', 'width', 'height', 'top', 'left'
+        ];
+        propsToGet.forEach(p => {
+          computed[p] = styles[p];
+        });
+        const attrs = {};
+        for (const attr of el.attributes) {
+          attrs[attr.name] = attr.value;
         }
+        return {
+          tagName: el.tagName.toLowerCase(),
+          id: el.id,
+          className: el.className,
+          attributes: attrs,
+          outerHTML: el.outerHTML.substring(0, 3000), // Cap size slightly lower for list matches
+          innerText: el.innerText.substring(0, 1000),
+          computedStyle: computed,
+          geometry: {
+            scrollLeft: el.scrollLeft,
+            scrollTop: el.scrollTop,
+            scrollWidth: el.scrollWidth,
+            scrollHeight: el.scrollHeight,
+            clientWidth: el.clientWidth,
+            clientHeight: el.clientHeight,
+            offsetWidth: el.offsetWidth,
+            offsetHeight: el.offsetHeight,
+            rect: (() => {
+              const r = el.getBoundingClientRect();
+              return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+            })()
+          }
+        };
+      };
+
+      const limitedElements = elements.slice(0, 10);
+      const matches = limitedElements.map(getSingleElementDetails);
+      const firstDetails = matches[0];
+
+      return {
+        exists: true,
+        totalMatches: elements.length,
+        matches: matches,
+        ...firstDetails
       };
     },
     args: [selector, computedProperties]

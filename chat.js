@@ -311,10 +311,112 @@ ${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
     ];
   }
 
+  if (opp.useCaseId) {
+    readGuideAsynchronously(opp.useCaseId, modelMsgBubble);
+  }
+
   if (chatMessages) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 }
+
+async function readGuideAsynchronously(useCaseId, bubble) {
+  const steps = [
+    {
+      type: 'tool',
+      name: 'get_guide_content',
+      args: { useCaseId },
+      title: `Reading guide "${useCaseId}"...`,
+      status: 'running'
+    }
+  ];
+
+  renderSteps(steps, bubble, true);
+
+  try {
+    const guideContent = await getGuideContent(useCaseId);
+    
+    // Update step to completed
+    steps[0].status = 'completed';
+    steps[0].result = guideContent;
+    renderSteps(steps, bubble, false);
+
+    // Collapse the thought container after completing
+    const detailsEl = bubble.querySelector(".dino-thought-container");
+    if (detailsEl) {
+      detailsEl.removeAttribute("open");
+    }
+
+    // Append to initial chat history message content
+    if (chatHistory.length > 0 && chatHistory[0].role === "user") {
+      chatHistory[0].content += `\n\nAssociated Guide Content for ${useCaseId}:\n${guideContent}`;
+    }
+
+    // Add citation to the bubble
+    let title = useCaseId;
+    const titleMatch = guideContent.match(/^#\s+(.+)$/m);
+    if (titleMatch) title = titleMatch[1].trim();
+
+    const uc = useCasesCache.find(u => u.id === useCaseId);
+    const citation = {
+      id: useCaseId,
+      title: title,
+      description: uc ? uc.description : ""
+    };
+
+    renderGreetingCitations([citation], bubble);
+
+  } catch (err) {
+    console.error("Failed to asynchronously read guide:", err);
+    steps[0].status = 'failed';
+    steps[0].error = err.message;
+    renderSteps(steps, bubble, false);
+  }
+}
+
+function renderGreetingCitations(citations, bubble) {
+  let citationsDiv = bubble.querySelector(".chat-citations");
+  if (!citationsDiv) {
+    citationsDiv = document.createElement("div");
+    citationsDiv.className = "chat-citations";
+    bubble.appendChild(citationsDiv);
+  }
+
+  let itemsHtml = citations.map(cit => `
+    <button class="citation-badge" data-id="${cit.id}" title="${escapeHtmlForChat(cit.description || '')}">
+      <svg class="citation-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      <span>${escapeHtmlForChat(cit.title)}</span>
+    </button>
+  `).join("");
+
+  citationsDiv.innerHTML = `
+    <div class="citations-header">
+      <svg class="citations-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>
+      <span>Modern Web Sources</span>
+    </div>
+    <div class="citations-list">${itemsHtml}</div>
+  `;
+
+  citationsDiv.querySelectorAll(".citation-badge").forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.getAttribute("data-id");
+      try {
+        const category = useCasesCache.find(u => u.id === id)?.category || "user-experience";
+        const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${id}.md`;
+        chrome.tabs.create({ url });
+        showToast(`Opening GitHub guide for ${id}...`, "success");
+      } catch (err) {
+        showToast(`Failed to open guide: ${err.message}`, "error");
+      }
+    };
+  });
+}
+
 
 async function onChatTabActive() {
   const chatInput = document.getElementById("chat-input");

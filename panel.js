@@ -126,7 +126,14 @@ function onDrawerClosed() {
 
 // Bind UI Click Handlers
 function bindUIEvents() {
-  document.getElementById("settings-form").addEventListener("submit", saveConfig);
+  const settingsForm = document.getElementById("settings-form");
+  if (settingsForm) {
+    settingsForm.addEventListener("submit", (e) => e.preventDefault());
+    settingsForm.querySelectorAll("input, select, textarea").forEach(field => {
+      field.addEventListener("change", () => saveConfig());
+    });
+  }
+
   document.getElementById("btn-reset-db").addEventListener("click", async () => {
     await chrome.storage.local.clear();
     await loadConfig();
@@ -140,6 +147,15 @@ function bindUIEvents() {
   document.getElementById("btn-stop-audit").addEventListener("click", abortAnalysis);
   document.getElementById("btn-stop-inspect").addEventListener("click", abortAnalysis);
 
+  document.getElementById("btn-answer-now-audit").addEventListener("click", () => {
+    earlyCompleteAnalysis();
+    showToast("Compiling partial report...", "info");
+  });
+  document.getElementById("btn-answer-now-inspect").addEventListener("click", () => {
+    earlyCompleteAnalysis();
+    showToast("Compiling partial report...", "info");
+  });
+
   document.getElementById("btn-export-audit").addEventListener("click", () => handleCopyReport("audit"));
   document.getElementById("btn-export-inspect").addEventListener("click", () => handleCopyReport("inspect"));
 }
@@ -150,6 +166,17 @@ function abortAnalysis() {
     currentAbortController.abort();
   }
   showToast("Analysis stopped by user.", "warning");
+}
+
+function startLoggerTimer(timerId) {
+  const timerEl = document.getElementById(timerId);
+  if (!timerEl) return null;
+  timerEl.textContent = "0.0s";
+  const startTime = Date.now();
+  return setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    timerEl.textContent = `${elapsed.toFixed(1)}s`;
+  }, 100);
 }
 
 // Action: Full/Focused Page Audit
@@ -165,10 +192,12 @@ async function runAudit() {
   }
 
   isAborted = false;
+  isEarlyCompletionRequested = false;
   currentAbortController = new AbortController();
 
   btn.disabled = true;
   stopBtn.classList.remove("hidden");
+  document.getElementById("btn-answer-now-audit").classList.remove("hidden");
   logger.classList.remove("hidden");
   logger.classList.remove("completed");
   logger.querySelector(".logger-header span:last-child").textContent = "Running analysis...";
@@ -191,6 +220,7 @@ async function runAudit() {
     focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. Start by listing and reading all guidelines in the 'security' and 'privacy' categories using list_use_cases and get_guide_content, and then audit the page DOM against those guidelines.";
   }
 
+  let timerInterval = startLoggerTimer("audit-timer");
   try {
     const startPrompt = `Please perform a Page Audit.${focusInstructions}
 Use your tools to check the page structure and find matching use cases and guidelines to recommend modern solutions.
@@ -219,8 +249,10 @@ Rules for browser compatibility:
     logger.classList.add("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analysis failed";
   } finally {
+    if (timerInterval) clearInterval(timerInterval);
     btn.disabled = false;
     stopBtn.classList.add("hidden");
+    document.getElementById("btn-answer-now-audit").classList.add("hidden");
   }
 }
 
@@ -246,10 +278,12 @@ async function runInspect() {
     }
 
     isAborted = false;
+    isEarlyCompletionRequested = false;
     currentAbortController = new AbortController();
 
     btn.disabled = true;
     stopBtn.classList.remove("hidden");
+    document.getElementById("btn-answer-now-inspect").classList.remove("hidden");
     logger.classList.remove("hidden");
     logger.classList.remove("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analyzing element...";
@@ -277,6 +311,7 @@ Rules for browser compatibility:
 - If the target is 'newly-available', you only need to include fallbacks for features that are experimental/non-standard.
 - If the target is 'none', you do not need to include any fallback code.`;
 
+    let timerInterval = startLoggerTimer("inspect-timer");
     const report = await runGeminiAgent("inspect", startPrompt, INSPECT_SYSTEM_INSTRUCTION);
 
     latestReports.inspect = report;
@@ -292,8 +327,10 @@ Rules for browser compatibility:
     logger.classList.add("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analysis failed";
   } finally {
+    if (timerInterval) clearInterval(timerInterval);
     btn.disabled = false;
     stopBtn.classList.add("hidden");
+    document.getElementById("btn-answer-now-inspect").classList.add("hidden");
   }
 }
 

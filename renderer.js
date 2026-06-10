@@ -515,7 +515,7 @@ If the legacy issue is resolved and everything functions correctly without javas
 If the legacy issue is still active, fails to execute properly, or violates the guide, mark it as not resolved.`;
 
     const systemInstruction = `You are a strict code verification agent. Analyze the provided DOM state and interact with the page if needed to verify the target legacy issue is resolved.
-You have tools to click elements, hover elements, type text, read computed CSS styles/attributes of selectors, and fetch console logs. Use them if the modernization fix requires user interaction, styling verification, or error checks.
+You have tools to click elements, hover elements, type text, read computed CSS styles/attributes of selectors, and fetch console logs. Use them if the modernization fix requires user interaction, styling verification, or error checks. When inspecting multiple elements, prefer calling get_element_info with a comma-separated selector list to retrieve all details in a single tool call to save tokens and minimize roundtrips.
     
 Output your verification report STRICTLY as a JSON object matching this schema:
 {

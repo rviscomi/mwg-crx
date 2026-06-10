@@ -1,6 +1,15 @@
 // Gemini REST Orchestrator and Agentic Tool-Calling Loop
 let isAborted = false;
 let currentAbortController = null;
+let isEarlyCompletionRequested = false;
+let recentRequests = [];
+
+function earlyCompleteAnalysis() {
+  isEarlyCompletionRequested = true;
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+}
 
 /**
  * Robustly parses a response text chunk to separate the <thought> block from user-facing content.
@@ -13,12 +22,9 @@ function parseThoughtAndContent(text) {
   let response = text || "";
 
   // 1. Primary check: Try to split by the explicit ===RESPONSE=== separator
-  const responseSeparatorMatch = response.match(/===\s*RESPONSE\s*===/i);
-  if (responseSeparatorMatch) {
-    const separatorIdx = responseSeparatorMatch.index;
-    const separatorLength = responseSeparatorMatch[0].length;
-    
-    let thoughtPart = response.substring(0, separatorIdx);
+  const parts = response.split(/===\s*RESPONSE\s*===/gi);
+  if (parts.length > 1) {
+    let thoughtPart = parts[0];
     const thoughtStart = thoughtPart.indexOf("<thought");
     if (thoughtStart !== -1) {
       let openingTagEnd = thoughtPart.indexOf(">", thoughtStart);
@@ -36,7 +42,7 @@ function parseThoughtAndContent(text) {
     
     return {
       thoughts: thoughtPart.trim(),
-      response: response.substring(separatorIdx + separatorLength).trim()
+      response: parts.slice(1).join("\n").trim()
     };
   }
 
@@ -104,7 +110,7 @@ function supportsThinking(modelName) {
   if (!modelName) return false;
   const name = modelName.toLowerCase();
   return name.includes("gemini-2.") || 
-         name.includes("gemini-3.") || 
+         name.includes("gemini-3") || 
          name.includes("thinking");
 }
 
@@ -165,13 +171,13 @@ function getEnabledTools() {
     },
     {
       name: "get_element_info",
-      description: "Retrieve detailed information about a DOM element matching the selector, including its tag name, attributes, outerHTML, innerText, and computed styles. Use this to verify computed styles (e.g. scrollbar-width, color-scheme, display) and attributes.",
+      description: "Retrieve detailed information about one or more DOM elements matching the selector or selector list (using querySelectorAll), including their tag name, attributes, outerHTML, innerText, and computed styles. Use comma-separated selector lists to query details for multiple elements in a single tool call to save tokens and minimize roundtrips.",
       parameters: {
         type: "OBJECT",
         properties: {
           selector: {
             type: "STRING",
-            description: "CSS selector of the target element."
+            description: "CSS selector or comma-separated selector list of the target element(s) (e.g. 'nav, footer, .sidebar')."
           },
           computedProperties: {
             type: "ARRAY",
@@ -360,6 +366,7 @@ Guidelines:
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
 6. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+7. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
 
 Output JSON Format Schema:
 [
@@ -402,6 +409,7 @@ Guidelines:
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
 10. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+11. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
 
 Output JSON Format Schema:
 [
@@ -520,6 +528,7 @@ INSTRUCTIONS:
     - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
 12. Whenever you mention or recommend changes to a specific DOM element on the page, you can link to it using the format: [Link Text](inspect:CSS_SELECTOR). For example, to refer to the primary navigation block, write [nav.primary-menu](inspect:nav.primary-menu). The user will be able to click this link to instantly inspect that element in the DevTools Elements panel.
 13. Whenever presenting choices, options, or asking what to do next, you should render those options as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format at the bottom of your response in a single paragraph block.
+14. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page (e.g. comparing styles, looking for specific classes, or auditing multiple targets), do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
 `;
 
 async function runGeminiAgent(loggerId, startPrompt, systemInstruction, responseSchema) {
@@ -549,19 +558,15 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
   ];
 
   let loopCount = 0;
-  let maxLoops = 30;
 
   while (true) {
     if (isAborted) {
       throw new Error("Analysis aborted by user.");
     }
-    if (loopCount >= maxLoops) {
-      const proceed = confirm(`Dino has executed ${maxLoops} tool calls. Do you want to allow another 30 tool executions?`);
-      if (proceed) {
-        maxLoops += 30;
-      } else {
-        throw new Error("Tool execution safety limit reached.");
-      }
+    if (isEarlyCompletionRequested) {
+      isEarlyCompletionRequested = false;
+      const report = await generateEarlyReport(url, history, systemInstruction, responseSchema, loggerId);
+      return report;
     }
     loopCount++;
     appendLog(loggerId, `Calling Gemini API (Turn ${loopCount})...`, "system");
@@ -631,19 +636,59 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
     };
     console.log("Request Body Debug:", debugBody);
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-      signal: currentAbortController.signal
-    });
+    // Adaptive pacing to prevent Tier 1 rate limits (15 RPM, 4M TPM)
+    const turnDelay = getAdaptivePacingDelay(history, loopCount);
+    if (turnDelay > 0) {
+      appendLog(loggerId, `Pacing API request to prevent rate limits... (waiting ${(turnDelay / 1000).toFixed(1)}s)`, "system");
+      const steps = turnDelay / 100;
+      for (let i = 0; i < steps; i++) {
+        if (isAborted || isEarlyCompletionRequested) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API returned error: ${response.status} - ${errorText}`);
+    if (isAborted) {
+      throw new Error("Analysis aborted by user.");
+    }
+    if (isEarlyCompletionRequested) {
+      isEarlyCompletionRequested = false;
+      const report = await generateEarlyReport(url, history, systemInstruction, responseSchema, loggerId);
+      return report;
+    }
+
+    let response;
+    try {
+      response = await fetchWithRetry(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: currentAbortController.signal
+      }, 5, loggerId);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        if (isEarlyCompletionRequested) {
+          isEarlyCompletionRequested = false;
+          appendLog(loggerId, "Request aborted. Compiling report with gathered data...", "system");
+          const report = await generateEarlyReport(url, history, systemInstruction, responseSchema, loggerId);
+          return report;
+        }
+        throw new Error("Analysis aborted by user.");
+      }
+      throw err;
     }
 
     const resJson = await response.json();
+
+    // Update sliding rate limiter window with the exact token count from the server response
+    if (resJson.usageMetadata) {
+      const entry = recentRequests.find(r => r.id === loopCount);
+      if (entry) {
+        entry.actualTokens = resJson.usageMetadata.totalTokenCount;
+      }
+    }
+
     const candidate = resJson.candidates[0];
     const rawModelContent = candidate.content;
 
@@ -685,6 +730,16 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
 
       const responseParts = [];
       for (const fc of functionCalls) {
+        if (isEarlyCompletionRequested) {
+          appendLog(loggerId, `Skipping tool execution: ${fc.functionCall.name} (Answer Now clicked)`, "system");
+          responseParts.push({
+            functionResponse: {
+              name: fc.functionCall.name,
+              response: { result: "Investigation terminated early by user. Please compile the final report immediately." }
+            }
+          });
+          continue;
+        }
         const { name, args } = fc.functionCall;
         appendLog(loggerId, `Model requested tool execution: ${name}(${JSON.stringify(args || {})})`, "agent");
 
@@ -793,6 +848,183 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
         throw new Error(`Final report did not conform to JSON format: ${err.message}. Raw output: ${textParts.substring(0, 300)}`);
       }
     }
+  }
+}
+
+function getAdaptivePacingDelay(history, loopCount) {
+  const now = Date.now();
+  recentRequests = recentRequests.filter(r => now - r.timestamp < 60000);
+  
+  const currentRPM = recentRequests.length;
+  
+  let totalChars = 0;
+  for (const turn of history) {
+    if (turn.parts) {
+      for (const part of turn.parts) {
+        if (part.text) totalChars += part.text.length;
+        if (part.functionCall) totalChars += JSON.stringify(part.functionCall).length;
+        if (part.functionResponse) totalChars += JSON.stringify(part.functionResponse).length;
+      }
+    }
+  }
+  const estimatedRequestTokens = Math.ceil(totalChars / 4) + 1000;
+  
+  const currentTPM = recentRequests.reduce((sum, r) => {
+    return sum + (r.actualTokens || r.estimatedTokens);
+  }, 0);
+  
+  // Dynamic limits based on plan tier config
+  const isPayAsYouGo = config.apiTier === "pay-as-you-go";
+  const MAX_RPM = isPayAsYouGo ? 360 : 15;
+  const MAX_TPM = isPayAsYouGo ? 4000000 : 1000000;
+  
+  let delay = 0;
+  
+  // Throttle if we are at >= 65% of RPM capacity or if the upcoming request would exceed 85% of TPM capacity
+  const upcomingTPM = currentTPM + estimatedRequestTokens;
+  if (currentRPM >= MAX_RPM * 0.65 || upcomingTPM >= MAX_TPM * 0.85) {
+    if (recentRequests.length > 0) {
+      const oldestRequestAge = now - recentRequests[0].timestamp;
+      const timeRemaining = 60000 - oldestRequestAge;
+      
+      // Calculate remaining slots
+      const availableSlots = MAX_RPM - currentRPM;
+      
+      if (upcomingTPM >= MAX_TPM * 0.85) {
+        // If we are getting close to TPM limit, wait out the required decay time of the window
+        delay = Math.max(delay, timeRemaining);
+      } else if (availableSlots > 1) {
+        delay = Math.max(delay, Math.ceil(timeRemaining / availableSlots));
+      } else {
+        delay = Math.max(delay, timeRemaining);
+      }
+    }
+  }
+  
+  // Cap the delay to 60 seconds (full window length) instead of 5 seconds to let the rate limit window decay completely if needed.
+  delay = Math.min(delay, 60000);
+  
+  recentRequests.push({ 
+    id: loopCount,
+    timestamp: now + delay, 
+    estimatedTokens: estimatedRequestTokens,
+    actualTokens: 0
+  });
+  
+  return delay;
+}
+
+async function fetchWithRetry(url, options, maxRetries = 5, loggerId = null) {
+  let attempt = 0;
+  let delay = 2000;
+  
+  while (true) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) {
+        return response;
+      }
+      
+      if (response.status === 429 || response.status === 503) {
+        attempt++;
+        if (attempt > maxRetries) {
+          const errText = await response.text();
+          throw new Error(`Gemini API returned error ${response.status} after ${maxRetries} retries: ${errText}`);
+        }
+        
+        const message = `Rate limit or service unavailable (HTTP ${response.status}). Retrying in ${(delay / 1000).toFixed(1)}s... (Attempt ${attempt}/${maxRetries})`;
+        console.warn(message);
+        if (loggerId) {
+          appendLog(loggerId, message, "system");
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+        continue;
+      }
+      
+      const errText = await response.text();
+      throw new Error(`Gemini API returned error: ${response.status} - ${errText}`);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw err;
+      }
+      
+      attempt++;
+      if (attempt > maxRetries) {
+        throw err;
+      }
+      
+      const message = `Network error: ${err.message}. Retrying in ${(delay / 1000).toFixed(1)}s... (Attempt ${attempt}/${maxRetries})`;
+      console.warn(message);
+      if (loggerId) {
+        appendLog(loggerId, message, "system");
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay *= 2;
+      continue;
+    }
+  }
+}
+
+async function generateEarlyReport(url, history, baseSystemInstruction, responseSchema, loggerId) {
+  const earlySystemPrompt = `${baseSystemInstruction || GENERIC_SYSTEM_INSTRUCTION}
+  
+  CRITICAL INSTRUCTION:
+  The user has requested early completion. You MUST NOT call or request any tools. You MUST immediately compile and return the final report containing ONLY the legacy issues and opportunities you have identified and verified so far.
+  Output the report STRICTLY as a JSON array matching the requested responseSchema.`;
+
+  appendLog(loggerId, "Querying Gemini for early report...", "system");
+
+  currentAbortController = new AbortController();
+  
+  const requestBody = {
+    contents: history,
+    systemInstruction: {
+      parts: [{ text: earlySystemPrompt }]
+    },
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema
+    }
+  };
+
+  if (supportsThinking(config.model)) {
+    requestBody.generationConfig.thinkingConfig = {
+      thinkingBudget: 2048
+    };
+  }
+
+  const response = await fetchWithRetry(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+    signal: currentAbortController.signal
+  }, 3, loggerId);
+
+  const resJson = await response.json();
+  const textParts = resJson.candidates[0].content.parts.filter(p => p.text !== undefined).map(p => p.text).join("\n").trim();
+  
+  try {
+    const firstBracket = textParts.indexOf("[");
+    const firstBrace = textParts.indexOf("{");
+    let startIdx = -1;
+    let endChar = "";
+    if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+      startIdx = firstBracket;
+      endChar = "]";
+    } else if (firstBrace !== -1) {
+      startIdx = firstBrace;
+      endChar = "}";
+    }
+    if (startIdx === -1) throw new Error("No JSON structure found");
+    const endIdx = textParts.lastIndexOf(endChar);
+    const jsonText = textParts.substring(startIdx, endIdx + 1);
+    const parsed = JSON.parse(jsonText);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (err) {
+    throw new Error(`Failed to parse early report JSON: ${err.message}. Raw output: ${textParts}`);
   }
 }
 
@@ -911,19 +1143,10 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
   const triggerUpdate = () => onStepUpdate([...steps]);
 
   let loopCount = 0;
-  let maxLoops = 30;
 
   while (true) {
     if (isAborted) {
       throw new Error("Chat aborted by user.");
-    }
-    if (loopCount >= maxLoops) {
-      const proceed = confirm(`Dino has executed ${maxLoops} tool calls. Do you want to allow another 30 tool executions?`);
-      if (proceed) {
-        maxLoops += 30;
-      } else {
-        throw new Error("Tool execution safety limit reached.");
-      }
     }
     loopCount++;
 
