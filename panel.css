@@ -1277,8 +1277,6 @@ body {
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.08) !important;
 }
 
-}
-
 /* Dino Chat Syntax Highlighting */
 .hl-keyword { color: #f472b6; font-weight: bold; }   /* Cyber pink */
 .hl-string { color: #34d399; }                       /* Emerald green */
@@ -1589,6 +1587,133 @@ body {
 
 .compliance-item::marker {
   color: rgba(239, 68, 68, 0.5);
+}
+
+/* Audit History Section */
+.audit-history-box {
+  margin-top: 32px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 24px;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.history-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-text:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.btn-text.btn-danger {
+  color: var(--danger-color);
+}
+
+.btn-text.btn-danger:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.audit-history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-item:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.history-item-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.history-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-item-url {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.history-item-dot {
+  color: var(--text-muted);
+}
+
+.btn-delete-audit {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+}
+
+.btn-delete-audit:hover {
+  color: var(--danger-color);
+  background-color: rgba(239, 68, 68, 0.1);
 }
 
 

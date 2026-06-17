@@ -100,12 +100,24 @@ function updateStatus(text, isError = false) {
   }
 }
 
-function commitSpeech() {
-  if (finalTranscript.trim()) {
-    chrome.runtime.sendMessage({
-      action: 'voice-result',
-      transcript: finalTranscript.trim()
-    });
+async function commitSpeech() {
+  const text = finalTranscript.trim();
+  if (text) {
+    // Write to storage as fallback
+    try {
+      await chrome.storage.local.set({ lastVoiceResult: text });
+    } catch (e) {
+      console.error("Failed to write voice result to storage:", e);
+    }
+
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'voice-result',
+        transcript: text
+      });
+    } catch (err) {
+      console.warn("Failed to send voice result message:", err);
+    }
   }
   window.close();
 }

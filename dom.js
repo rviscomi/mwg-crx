@@ -1,4 +1,17 @@
 // DOM Simplifier and Selection Script
+async function getInspectedTabUrl() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  return new Promise((resolve) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        resolve(null);
+      } else {
+        resolve(tab.url);
+      }
+    });
+  });
+}
+
 async function getPageDOM() {
   const tabId = chrome.devtools.inspectedWindow.tabId;
   if (!tabId) throw new Error("No inspected tab found");
@@ -420,4 +433,471 @@ function normalizeSelector(sel) {
   if (!sel) return "";
   // Remove backslash escapes before spaces or dots, but keep other valid escapes
   return sel.replace(/\\(\s+|\.)/g, '$1').trim();
+}
+
+async function inspectEventListeners(selector) {
+  const normSelector = selector ? normalizeSelector(selector) : null;
+  return new Promise((resolve, reject) => {
+    const targetExpr = normSelector && normSelector !== "$0" ? `document.querySelector(${JSON.stringify(normSelector)})` : `$0`;
+    
+    const evalString = `(() => {
+      const el = ${targetExpr};
+      if (!el) return { success: false, error: 'Element not found' };
+      
+      if (typeof getEventListeners !== 'function') {
+        return { success: false, error: 'getEventListeners API is not available in this context.' };
+      }
+      
+      const listeners = getEventListeners(el);
+      const serialized = {};
+      for (const [type, list] of Object.entries(listeners)) {
+        serialized[type] = list.map(l => ({
+          useCapture: l.useCapture,
+          passive: l.passive,
+          once: l.once,
+          listener: l.listener ? l.listener.toString() : ''
+        }));
+      }
+      
+      return {
+        success: true,
+        selector: ${selector ? JSON.stringify(selector) : '"$0"'},
+        tagName: el.tagName ? el.tagName.toLowerCase() : '',
+        id: el.id || '',
+        className: el.className || '',
+        listeners: serialized
+      };
+    })()`;
+
+    chrome.devtools.inspectedWindow.eval(evalString, (result, isException) => {
+      if (isException) {
+        reject(new Error(isException.value || "Exception during event listeners evaluation"));
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
+async function simulateAction(selector, action, payload = {}) {
+  const normSelector = normalizeSelector(selector);
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  if (action === 'click') {
+    return await clickElement(normSelector);
+  } else if (action === 'type') {
+    const text = typeof payload === 'string' ? payload : (payload.text || '');
+    return await typeText(normSelector, text);
+  } else if (action === 'hover') {
+    return await hoverElement(normSelector);
+  } else if (action === 'scroll') {
+    const left = payload && payload.left !== undefined ? payload.left : null;
+    const top = payload && payload.top !== undefined ? payload.top : null;
+    const behavior = (payload && payload.behavior) || 'auto';
+    return await scrollElement(normSelector, left, top, behavior);
+  } else if (action === 'press_key') {
+    const key = typeof payload === 'string' ? payload : (payload && payload.key) || '';
+    return await pressKey(normSelector, key);
+  }
+
+  // Execute other actions (focus, blur, submit, change) in the MAIN world
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    world: "MAIN",
+    func: (sel, act, pay) => {
+      const el = sel === "document" ? document : document.querySelector(sel);
+      if (!el) return { success: false, error: `Element matching selector "${sel}" not found.` };
+
+      if (act === 'focus') {
+        if (typeof el.focus === 'function') {
+          el.focus();
+          return { success: true, message: `Successfully focused element matching selector "${sel}".` };
+        } else {
+          return { success: false, error: `Element does not support focus action.` };
+        }
+      } else if (act === 'blur') {
+        if (typeof el.blur === 'function') {
+          el.blur();
+          return { success: true, message: `Successfully blurred element matching selector "${sel}".` };
+        } else {
+          return { success: false, error: `Element does not support blur action.` };
+        }
+      } else if (act === 'submit') {
+        const form = el.tagName.toLowerCase() === 'form' ? el : el.form || el.closest('form');
+        if (form) {
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.submit();
+          }
+          return { success: true, message: `Successfully submitted form associated with selector "${sel}".` };
+        } else {
+          return { success: false, error: `No associated form found for selector "${sel}".` };
+        }
+      } else if (act === 'change') {
+        if ('value' in el) {
+          const val = pay && pay.value !== undefined ? pay.value : pay;
+          el.value = val;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          return { success: true, message: `Successfully changed value to "${val}" and triggered change event on selector "${sel}".` };
+        } else {
+          return { success: false, error: `Element does not support value change.` };
+        }
+      }
+
+      return { success: false, error: `Unsupported action: "${act}".` };
+    },
+    args: [normSelector, action, payload]
+  });
+  return result[0].result;
+}
+
+async function analyzeLayoutMetrics(selector) {
+  const normSelector = normalizeSelector(selector);
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    world: "MAIN",
+    func: (sel) => {
+      const el = sel === "document" ? document.documentElement : document.querySelector(sel);
+      if (!el) return { success: false, error: `Element matching selector "${sel}" not found.` };
+      
+      const rect = el.getBoundingClientRect();
+      const boundingBox = {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      };
+      
+      const styles = window.getComputedStyle(el);
+      const layoutStyles = {
+        display: styles.display,
+        position: styles.position,
+        visibility: styles.visibility,
+        opacity: styles.opacity,
+        zIndex: styles.zIndex,
+        boxSizing: styles.boxSizing,
+        marginTop: styles.marginTop,
+        marginRight: styles.marginRight,
+        marginBottom: styles.marginBottom,
+        marginLeft: styles.marginLeft,
+        paddingTop: styles.paddingTop,
+        paddingRight: styles.paddingRight,
+        paddingBottom: styles.paddingBottom,
+        paddingLeft: styles.paddingLeft,
+      };
+      
+      const ariaAttributes = {};
+      for (const attr of el.attributes) {
+        if (attr.name.startsWith('aria-') || attr.name === 'role') {
+          ariaAttributes[attr.name] = attr.value;
+        }
+      }
+      
+      const a11yPath = [];
+      let current = el;
+      while (current && current !== document.documentElement) {
+        a11yPath.push({
+          tagName: current.tagName.toLowerCase(),
+          id: current.id || null,
+          className: current.className || null,
+          role: current.getAttribute('role') || null,
+          computedRole: current.computedRole || null,
+          computedName: current.computedName || null,
+          ariaHidden: current.getAttribute('aria-hidden') || null
+        });
+        current = current.parentElement;
+      }
+      
+      const isVisible = rect.width > 0 && rect.height > 0 && 
+                        styles.visibility !== 'hidden' && 
+                        styles.display !== 'none' && 
+                        styles.opacity !== '0';
+                        
+      const contrastDetails = {
+        color: styles.color,
+        backgroundColor: styles.backgroundColor,
+        fontSize: styles.fontSize,
+        fontWeight: styles.fontWeight
+      };
+      
+      return {
+        success: true,
+        selector: sel,
+        boundingBox,
+        layoutStyles,
+        ariaAttributes,
+        computedRole: el.computedRole || null,
+        computedName: el.computedName || null,
+        tabIndex: el.tabIndex,
+        disabled: el.disabled || false,
+        isVisible,
+        a11yPath,
+        contrastDetails
+      };
+    },
+    args: [normSelector]
+  });
+  return result[0].result;
+}
+
+async function getLcpElement() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      return new Promise((resolve) => {
+        let entries = [];
+        const observer = new PerformanceObserver((list) => {
+          entries = entries.concat(list.getEntries());
+        });
+        
+        try {
+          observer.observe({ type: 'largest-contentful-paint', buffered: true });
+        } catch (e) {
+          return resolve({ error: "Largest Contentful Paint API not supported or failed: " + e.message });
+        }
+        
+        setTimeout(() => {
+          observer.disconnect();
+          if (entries.length === 0) {
+            return resolve(null);
+          }
+          
+          const lastEntry = entries[entries.length - 1];
+          const el = lastEntry.element;
+          
+          if (!el) {
+            return resolve({
+              size: lastEntry.size,
+              url: lastEntry.url,
+              id: lastEntry.id,
+              startTime: lastEntry.startTime,
+              renderTime: lastEntry.renderTime,
+              loadTime: lastEntry.loadTime,
+              message: "LCP entry exists but the DOM element was deleted or is not retrievable."
+            });
+          }
+          
+          const getSelector = (element) => {
+            if (element.id) return `#${CSS.escape(element.id)}`;
+            const parts = [];
+            let curr = element;
+            while (curr && curr.nodeType === Node.ELEMENT_NODE) {
+              let part = curr.tagName.toLowerCase();
+              if (curr.id) {
+                part += `#${CSS.escape(curr.id)}`;
+                parts.unshift(part);
+                break;
+              }
+              let sibling = curr;
+              let nth = 1;
+              while (sibling.previousElementSibling) {
+                sibling = sibling.previousElementSibling;
+                if (sibling.tagName === curr.tagName) {
+                  nth++;
+                }
+              }
+              let parent = curr.parentElement;
+              if (parent) {
+                let hasSiblingWithSameTag = false;
+                for (const child of parent.children) {
+                  if (child !== curr && child.tagName === curr.tagName) {
+                    hasSiblingWithSameTag = true;
+                    break;
+                  }
+                }
+                if (hasSiblingWithSameTag) {
+                  part += `:nth-of-type(${nth})`;
+                }
+              }
+              parts.unshift(part);
+              curr = curr.parentElement;
+            }
+            return parts.join(' > ');
+          };
+          
+          const selector = getSelector(el);
+          const rect = el.getBoundingClientRect();
+          const attributes = {};
+          for (const attr of el.attributes) {
+            attributes[attr.name] = attr.value;
+          }
+          
+          const styles = window.getComputedStyle(el);
+          
+          resolve({
+            success: true,
+            selector,
+            tagName: el.tagName.toLowerCase(),
+            outerHTML: el.outerHTML,
+            boundingBox: {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+              right: rect.right,
+              bottom: rect.bottom
+            },
+            attributes,
+            styles: {
+              backgroundImage: styles.backgroundImage,
+              objectFit: styles.objectFit,
+              display: styles.display,
+              visibility: styles.visibility,
+              opacity: styles.opacity
+            },
+            metric: {
+              size: lastEntry.size,
+              url: lastEntry.url,
+              id: lastEntry.id,
+              startTime: lastEntry.startTime,
+              renderTime: lastEntry.renderTime,
+              loadTime: lastEntry.loadTime
+            }
+          });
+        }, 100);
+      });
+    }
+  });
+
+  return result[0].result;
+}
+
+async function getViewportImages() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      
+      const imagesInViewport = [];
+      
+      const getSelector = (element) => {
+        if (element.id) return `#${CSS.escape(element.id)}`;
+        const parts = [];
+        let curr = element;
+        while (curr && curr.nodeType === Node.ELEMENT_NODE) {
+          let part = curr.tagName.toLowerCase();
+          if (curr.id) {
+            part += `#${CSS.escape(curr.id)}`;
+            parts.unshift(part);
+            break;
+          }
+          let sibling = curr;
+          let nth = 1;
+          while (sibling.previousElementSibling) {
+            sibling = sibling.previousElementSibling;
+            if (sibling.tagName === curr.tagName) {
+              nth++;
+            }
+          }
+          let parent = curr.parentElement;
+          if (parent) {
+            let hasSiblingWithSameTag = false;
+            for (const child of parent.children) {
+              if (child !== curr && child.tagName === curr.tagName) {
+                hasSiblingWithSameTag = true;
+                break;
+              }
+            }
+            if (hasSiblingWithSameTag) {
+              part += `:nth-of-type(${nth})`;
+            }
+          }
+          parts.unshift(part);
+          curr = curr.parentElement;
+        }
+        return parts.join(' > ');
+      };
+
+      const allElements = document.getElementsByTagName('*');
+      for (const el of allElements) {
+        const tagName = el.tagName.toLowerCase();
+        
+        let isImage = false;
+        let imgSrc = '';
+        let imageType = '';
+        
+        if (tagName === 'img') {
+          isImage = true;
+          imgSrc = el.currentSrc || el.src;
+          imageType = 'img';
+        } else if (tagName === 'image' && el.namespaceURI === 'http://www.w3.org/2000/svg') {
+          isImage = true;
+          imgSrc = el.getAttribute('href') || el.getAttribute('xlink:href');
+          imageType = 'svg-image';
+        } else {
+          const styles = window.getComputedStyle(el);
+          const bgImg = styles.backgroundImage;
+          if (bgImg && bgImg !== 'none') {
+            const match = bgImg.match(/url\((['"]?)(.*?)\1\)/);
+            if (match && match[2]) {
+              isImage = true;
+              imgSrc = match[2];
+              imageType = 'background-image';
+            }
+          }
+        }
+        
+        if (isImage) {
+          const rect = el.getBoundingClientRect();
+          
+          const inViewport = 
+            rect.width > 0 && 
+            rect.height > 0 &&
+            rect.bottom > 0 &&
+            rect.right > 0 &&
+            rect.top < viewportHeight &&
+            rect.left < viewportWidth;
+            
+          if (inViewport) {
+            const styles = window.getComputedStyle(el);
+            const isVisible = styles.display !== 'none' && styles.visibility !== 'hidden' && styles.opacity !== '0';
+            
+            if (isVisible) {
+              const attributes = {};
+              for (const attr of el.attributes) {
+                attributes[attr.name] = attr.value;
+              }
+              
+              imagesInViewport.push({
+                selector: getSelector(el),
+                tagName,
+                imageType,
+                src: imgSrc,
+                attributes,
+                boundingBox: {
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                  right: rect.right,
+                  bottom: rect.bottom
+                },
+                loading: el.loading || null,
+                fetchpriority: el.fetchPriority || el.getAttribute('fetchpriority') || null
+              });
+            }
+          }
+        }
+      }
+      
+      return imagesInViewport;
+    }
+  });
+
+  return result[0].result;
 }

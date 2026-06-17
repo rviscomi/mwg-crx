@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadConfig();
   await loadUseCases();
   bindUIEvents();
+  await renderAuditHistoryList();
 });
 
 // Navigation / Tabs Setup
@@ -158,6 +159,13 @@ function bindUIEvents() {
 
   document.getElementById("btn-export-audit").addEventListener("click", () => handleCopyReport("audit"));
   document.getElementById("btn-export-inspect").addEventListener("click", () => handleCopyReport("inspect"));
+
+  document.getElementById("btn-clear-all-audits").addEventListener("click", async () => {
+    if (confirm("Are you sure you want to delete all saved audits for this page?")) {
+      await clearAllAudits();
+      showToast("Page audit history cleared.", "info");
+    }
+  });
 }
 
 function abortAnalysis() {
@@ -243,6 +251,16 @@ Rules for browser compatibility:
     logger.classList.add("completed");
     logger.querySelector(".logger-header span:last-child").textContent = "Analysis completed!";
     showToast("Page audit completed successfully!", "success");
+
+    // Persist audit results in history
+    try {
+      const currentUrl = await getInspectedTabUrl();
+      if (currentUrl) {
+        await saveAuditToHistory(currentUrl, focus, report);
+      }
+    } catch (e) {
+      console.error("Failed to save audit to history:", e);
+    }
   } catch (err) {
     appendLog("audit", `Error: ${err.message}`, "system");
     showToast(`Audit failed: ${err.message}`, "error");
@@ -371,4 +389,252 @@ async function copyToClipboard(text) {
       return false;
     }
   }
+}
+
+// --- Audit History Persistence & Formatting ---
+
+function formatRelativeTime(createdTimeIso) {
+  const runDateFallback = () => {
+    try {
+      const now = new Date();
+      const created = new Date(createdTimeIso);
+      const diffMs = now - created;
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return "just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return created.toLocaleDateString();
+    } catch (e) {
+      console.error("Date fallback formatting error:", e);
+      return "unknown time";
+    }
+  };
+
+  if (typeof Temporal === 'undefined') {
+    return runDateFallback();
+  }
+
+  try {
+    const now = Temporal.Now.zonedDateTimeISO();
+    const tz = now.timeZoneId;
+    const created = Temporal.Instant.from(createdTimeIso).toZonedDateTimeISO(tz);
+    const diff = now.since(created, { largestUnit: 'day', smallestUnit: 'minute' });
+    
+    if (diff.days > 7) {
+      return created.toPlainDate().toString();
+    }
+    
+    const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+    
+    if (diff.days > 0) {
+      return rtf.format(-diff.days, 'day');
+    }
+    if (diff.hours > 0) {
+      return rtf.format(-diff.hours, 'hour');
+    }
+    if (diff.minutes > 0) {
+      return rtf.format(-diff.minutes, 'minute');
+    }
+    return "just now";
+  } catch (e) {
+    console.warn("Temporal formatting failed, falling back to Date:", e);
+    return runDateFallback();
+  }
+}
+
+function getIconForAuditType(type) {
+  switch (type) {
+    case 'accessibility': return '♿';
+    case 'performance': return '⚡';
+    case 'security-privacy': return '🛡️';
+    default: return '🔍';
+  }
+}
+
+function shortenUrl(rawUrl) {
+  if (!rawUrl) return "unknown page";
+  try {
+    const urlObj = new URL(rawUrl);
+    let path = urlObj.pathname;
+    if (path.length > 20) {
+      path = path.substring(0, 10) + "..." + path.substring(path.length - 10);
+    }
+    return `${urlObj.host}${path === '/' ? '' : path}`;
+  } catch (e) {
+    return rawUrl;
+  }
+}
+
+function normalizeUrl(rawUrl) {
+  if (!rawUrl) return "";
+  try {
+    const urlObj = new URL(rawUrl);
+    urlObj.hash = "";
+    return urlObj.href;
+  } catch (e) {
+    return rawUrl;
+  }
+}
+
+async function renderAuditHistoryList() {
+  const historyList = document.getElementById("audit-history-list");
+  if (!historyList) return;
+
+  const currentUrl = await getInspectedTabUrl();
+  const normalizedCurrent = normalizeUrl(currentUrl);
+
+  const indexData = await chrome.storage.local.get("mwg_audit_history_index");
+  const index = indexData.mwg_audit_history_index || [];
+
+  // Filter index for the current page only
+  const filteredIndex = index.filter(entry => normalizeUrl(entry.url) === normalizedCurrent);
+
+  if (filteredIndex.length === 0) {
+    historyList.innerHTML = `<li style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px;">No past audits found for this page.</li>`;
+    const clearBtn = document.getElementById("btn-clear-all-audits");
+    if (clearBtn) clearBtn.style.display = "none";
+    return;
+  }
+
+  const clearBtn = document.getElementById("btn-clear-all-audits");
+  if (clearBtn) {
+    clearBtn.style.display = "block";
+    clearBtn.textContent = "Clear Page History";
+  }
+
+  historyList.innerHTML = filteredIndex.map(entry => `
+    <li class="history-item" data-id="${entry.id}">
+      <div class="history-item-body">
+        <span class="history-item-icon">${getIconForAuditType(entry.type)}</span>
+        <div class="history-item-details">
+          <div class="history-item-url" title="${entry.url}">${shortenUrl(entry.url)}</div>
+          <div class="history-item-meta">
+            <span class="history-item-findings">${entry.opportunityCount} findings</span>
+            <span class="history-item-dot">•</span>
+            <span class="history-item-time">${formatRelativeTime(entry.timestamp)}</span>
+          </div>
+        </div>
+      </div>
+      <button class="btn-delete-audit" title="Delete audit" data-id="${entry.id}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </li>
+  `).join("");
+
+  // Setup click listeners for loading audit details
+  historyList.querySelectorAll(".history-item").forEach(item => {
+    item.addEventListener("click", async (e) => {
+      if (e.target.closest(".btn-delete-audit")) return;
+
+      const id = item.dataset.id;
+      const report = await getSavedAuditDetails(id);
+      if (report) {
+        latestReports.audit = report;
+        const results = document.getElementById("audit-results");
+        renderOpportunities(results, report, true);
+        results.classList.remove("hidden");
+        document.getElementById("btn-export-audit").classList.remove("hidden");
+        
+        document.getElementById("audit-logger").classList.add("hidden");
+        showToast("Loaded audit from history.", "success");
+      }
+    });
+  });
+
+  // Setup click listeners for deleting individual audits
+  historyList.querySelectorAll(".btn-delete-audit").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      await deleteSavedAudit(id);
+      showToast("Audit deleted.", "info");
+    });
+  });
+}
+
+async function getSavedAuditDetails(id) {
+  const key = `mwg_audit_details_${id}`;
+  const data = await chrome.storage.local.get(key);
+  return data[key];
+}
+
+async function saveAuditToHistory(url, type, report) {
+  const timestamp = new Date().toISOString();
+  const id = `audit_${Date.now()}`;
+  
+  const indexData = await chrome.storage.local.get("mwg_audit_history_index");
+  const index = indexData.mwg_audit_history_index || [];
+  
+  const entry = {
+    id,
+    url,
+    timestamp,
+    type,
+    opportunityCount: report.length
+  };
+  index.unshift(entry);
+  
+  await chrome.storage.local.set({
+    "mwg_audit_history_index": index,
+    [`mwg_audit_details_${id}`]: report
+  });
+  
+  await renderAuditHistoryList();
+}
+
+async function deleteSavedAudit(id) {
+  const indexData = await chrome.storage.local.get("mwg_audit_history_index");
+  const index = indexData.mwg_audit_history_index || [];
+  
+  const updatedIndex = index.filter(entry => entry.id !== id);
+  
+  await chrome.storage.local.remove(`mwg_audit_details_${id}`);
+  await chrome.storage.local.set({
+    "mwg_audit_history_index": updatedIndex
+  });
+  
+  await renderAuditHistoryList();
+}
+
+async function clearAllAudits() {
+  const currentUrl = await getInspectedTabUrl();
+  const normalizedCurrent = normalizeUrl(currentUrl);
+
+  const indexData = await chrome.storage.local.get("mwg_audit_history_index");
+  const index = indexData.mwg_audit_history_index || [];
+  
+  const toRemove = index.filter(entry => normalizeUrl(entry.url) === normalizedCurrent);
+  const toKeep = index.filter(entry => normalizeUrl(entry.url) !== normalizedCurrent);
+  
+  const keysToRemove = toRemove.map(entry => `mwg_audit_details_${entry.id}`);
+  if (keysToRemove.length > 0) {
+    await chrome.storage.local.remove(keysToRemove);
+  }
+  
+  await chrome.storage.local.set({
+    "mwg_audit_history_index": toKeep
+  });
+  
+  await renderAuditHistoryList();
+}
+
+// Listen to Chrome tab changes/navigation to update audit history list contextually
+if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (tabId === chrome.devtools.inspectedWindow.tabId && changeInfo.url) {
+      await renderAuditHistoryList();
+    }
+  });
+
+  chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    if (activeInfo.tabId === chrome.devtools.inspectedWindow.tabId) {
+      await renderAuditHistoryList();
+    }
+  });
 }

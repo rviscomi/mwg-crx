@@ -4,10 +4,64 @@ let isChatGenerating = false;
 let isListening = false;
 let voiceWindowId = null;
 
+// --- Persistence Helpers ---
+
+function normalizeUrlForStorage(rawUrl) {
+  if (!rawUrl) return "";
+  try {
+    const urlObj = new URL(rawUrl);
+    urlObj.hash = "";
+    return `dino_chat_${urlObj.href}`;
+  } catch (e) {
+    return `dino_chat_${rawUrl}`;
+  }
+}
+
+async function persistCurrentChatHistory() {
+  const rawUrl = await getInspectedTabUrl();
+  if (!rawUrl) return;
+  const storageKey = normalizeUrlForStorage(rawUrl);
+  await chrome.storage.session.set({
+    [storageKey]: {
+      url: rawUrl,
+      lastUpdated: Date.now(),
+      history: chatHistory
+    }
+  });
+}
+
+async function loadAndRestoreChat() {
+  const rawUrl = await getInspectedTabUrl();
+  if (!rawUrl) return false;
+  const storageKey = normalizeUrlForStorage(rawUrl);
+  const data = await chrome.storage.session.get(storageKey);
+  const savedSession = data[storageKey];
+  
+  if (savedSession && savedSession.history && savedSession.history.length > 0) {
+    chatHistory = savedSession.history;
+    
+    const chatMessages = document.getElementById("chat-messages");
+    if (chatMessages) {
+      chatMessages.innerHTML = "";
+    }
+    
+    chatHistory.forEach((msg) => {
+      const bubble = appendChatMessage(msg.role, msg.content);
+      if (msg.role === "model" && msg.citations && msg.citations.length > 0) {
+        renderGreetingCitations(msg.citations, bubble);
+      }
+    });
+    
+    return true;
+  }
+  return false;
+}
+
 function unescapeHtmlEntities(str) {
   return str
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&");
 }
 
@@ -29,7 +83,8 @@ function highlightCode(code, lang) {
   let escaped = code
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
   if (lang === "html" || lang === "xml") {
     // Highlight script block contents (JS)
@@ -136,6 +191,7 @@ function inspectPageElement(selector) {
 function renderDinoResponse(content, container) {
   // Pre-process custom protocols to raw HTML links to bypass marked parser filter
   let processed = content || "";
+  processed = processed.replace(/===\s*RESPONSE\s*===/gi, "");
   processed = processed.replace(/\[([^\]]+)\]\((suggest:[^)]+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
@@ -198,6 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const sendBtn = document.getElementById("send-btn");
   const chatInput = document.getElementById("chat-input");
   const micBtn = document.getElementById("mic-btn");
+  const newChatBtn = document.getElementById("btn-new-chat");
   
   if (sendBtn) sendBtn.addEventListener("click", handleSendChatMessage);
   if (micBtn) {
@@ -208,6 +265,9 @@ document.addEventListener("DOMContentLoaded", () => {
         startListening();
       }
     });
+  }
+  if (newChatBtn) {
+    newChatBtn.addEventListener("click", handleNewChat);
   }
   if (chatInput) {
     chatInput.addEventListener("keydown", (e) => {
@@ -280,6 +340,7 @@ ${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
         content: greeting
       }
     ];
+    await persistCurrentChatHistory();
 
   } catch (err) {
     console.error("Failed to start chat with opportunity:", err);
@@ -309,6 +370,7 @@ ${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
         content: fallback
       }
     ];
+    await persistCurrentChatHistory();
   }
 
   if (opp.useCaseId) {
@@ -363,6 +425,11 @@ async function readGuideAsynchronously(useCaseId, bubble) {
       title: title,
       description: uc ? uc.description : ""
     };
+
+    if (chatHistory.length > 1 && chatHistory[1].role === "model") {
+      chatHistory[1].citations = [citation];
+    }
+    await persistCurrentChatHistory();
 
     renderGreetingCitations([citation], bubble);
 
@@ -442,19 +509,69 @@ async function onChatTabActive() {
 
   hasInitializedChat = true;
   
+  const restored = await loadAndRestoreChat();
+  if (restored) return;
+
+  await startFreshChat();
+}
+
+async function startFreshChat() {
+  const chatMessages = document.getElementById("chat-messages");
+  if (chatMessages) {
+    chatMessages.innerHTML = `
+      <div class="chat-message with-avatar model">
+        <div class="message-avatar">
+          <img src="dino-agent.png" alt="Dino">
+        </div>
+        <div class="message-bubble" id="initial-greeting">
+          <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const greetingEl = document.getElementById("initial-greeting");
   try {
-     const greeting = await runDinoGreeting();
+    const greeting = await runDinoGreeting();
     renderDinoResponse(greeting, greetingEl);
     addMessageActions(greetingEl, greeting);
     chatHistory = [{ role: "model", content: greeting }];
+    await persistCurrentChatHistory();
   } catch (err) {
     console.error("Failed to fetch Dino greeting:", err);
     const fallback = "Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?\n\nFeel free to ask me any open questions about this page, or get started with one of these audits:\n\n[🔍 Audit Accessibility](suggest:Audit the page for accessibility) [⚡ Audit Performance](suggest:Audit the page for performance) [🛡️ Audit Privacy & Security](suggest:Audit the page for privacy and security)";
     renderDinoResponse(fallback, greetingEl);
     addMessageActions(greetingEl, fallback);
     chatHistory = [{ role: "model", content: fallback }];
+    await persistCurrentChatHistory();
   }
+}
+
+async function handleNewChat() {
+  const rawUrl = await getInspectedTabUrl();
+  if (rawUrl) {
+    const storageKey = normalizeUrlForStorage(rawUrl);
+    await chrome.storage.session.remove(storageKey);
+  }
+  chatHistory = [];
+  await startFreshChat();
+  showToast("Started a new conversation!", "success");
+}
+
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (tabId === chrome.devtools.inspectedWindow.tabId && changeInfo.url) {
+      chatHistory = [];
+      const restored = await loadAndRestoreChat();
+      if (!restored) {
+        await startFreshChat();
+      }
+    }
+  });
 }
 
 function renderSteps(steps, bubble, isGenerating) {
@@ -738,14 +855,15 @@ async function handleSendChatMessage() {
     const responseContent = modelMsgBubble.querySelector(".dino-response-content");
     let finalResponse = response;
     if (!finalResponse || finalResponse.trim() === "") {
-      finalResponse = streamedText;
+      finalResponse = parseStreamContent(streamedText).userContent;
     }
     if (responseContent) {
       renderDinoResponse(finalResponse, responseContent);
     }
 
     chatHistory.push({ role: "user", content: message });
-    chatHistory.push({ role: "model", content: finalResponse });
+    chatHistory.push({ role: "model", content: finalResponse, citations: citations || [] });
+    await persistCurrentChatHistory();
 
     // Render citations if we have them
     if (citations && citations.length > 0) {
@@ -839,6 +957,9 @@ function startListening() {
   if (micBtn) micBtn.classList.add("listening");
   isListening = true;
 
+  // Clear previous voice result to prevent stale data
+  chrome.storage.local.remove(['lastVoiceResult']);
+
   // Open the voice input popup window
   chrome.windows.create({
     url: chrome.runtime.getURL('voice.html'),
@@ -871,6 +992,19 @@ if (chrome.windows && chrome.windows.onRemoved) {
       isListening = false;
       const micBtn = document.getElementById("mic-btn");
       if (micBtn) micBtn.classList.remove("listening");
+
+      // Fallback: read from storage in case the message was missed
+      chrome.storage.local.get(['lastVoiceResult'], (result) => {
+        if (result && result.lastVoiceResult) {
+          const chatInput = document.getElementById("chat-input");
+          if (chatInput && !chatInput.value) {
+            chatInput.value = result.lastVoiceResult;
+            chatInput.style.height = "auto";
+            chatInput.style.height = chatInput.scrollHeight + "px";
+          }
+          chrome.storage.local.remove(['lastVoiceResult']);
+        }
+      });
     }
   });
 }

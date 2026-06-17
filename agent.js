@@ -40,67 +40,74 @@ function parseThoughtAndContent(text) {
       thoughtPart = thoughtPart.substring(0, closingTagMatch.index);
     }
     
-    return {
-      thoughts: thoughtPart.trim(),
-      response: parts.slice(1).join("\n").trim()
-    };
-  }
+    thoughts = thoughtPart.trim();
+    response = parts.slice(1).join("\n").trim();
+  } else {
+    // 2. Secondary check: Try to split by the standard </thought> tag
+    const thoughtStart = response.indexOf("<thought");
+    if (thoughtStart !== -1) {
+      let openingTagEnd = response.indexOf(">", thoughtStart);
+      if (openingTagEnd === -1 || openingTagEnd > thoughtStart + 20) {
+        openingTagEnd = thoughtStart + 8;
+      } else {
+        openingTagEnd = openingTagEnd + 1;
+      }
 
-  // 2. Secondary check: Try to split by the standard </thought> tag
-  const thoughtStart = response.indexOf("<thought");
-  if (thoughtStart !== -1) {
-    let openingTagEnd = response.indexOf(">", thoughtStart);
-    if (openingTagEnd === -1 || openingTagEnd > thoughtStart + 20) {
-      openingTagEnd = thoughtStart + 8;
-    } else {
-      openingTagEnd = openingTagEnd + 1;
-    }
+      const closingTagMatch = response.substring(openingTagEnd).match(/<\/\s*thought\s*>/i);
+      if (closingTagMatch) {
+        const thoughtEnd = openingTagEnd + closingTagMatch.index;
+        const closingTagEnd = thoughtEnd + closingTagMatch[0].length;
+        thoughts = response.substring(openingTagEnd, thoughtEnd).trim();
+        response = (response.substring(0, thoughtStart) + "\n" + response.substring(closingTagEnd)).trim();
+      } else {
+        // Heuristic fallback if closing tag is missing
+        const remainder = response.substring(openingTagEnd);
+        
+        // Look for Dino greeting indicators (e.g. Rawr!, 🦖, Dino here)
+        const dinoStartMatch = remainder.match(/(?:Rawr!|🦖|Dino\s+here|Rex\s+here)/i);
+        const dinoIdx = dinoStartMatch ? dinoStartMatch.index : -1;
 
-    const closingTagMatch = response.substring(openingTagEnd).match(/<\/\s*thought\s*>/i);
-    if (closingTagMatch) {
-      const thoughtEnd = openingTagEnd + closingTagMatch.index;
-      const closingTagEnd = thoughtEnd + closingTagMatch[0].length;
-      thoughts = response.substring(openingTagEnd, thoughtEnd).trim();
-      response = (response.substring(0, thoughtStart) + "\n" + response.substring(closingTagEnd)).trim();
-      return { thoughts, response };
-    } else {
-      // Heuristic fallback if closing tag is missing
-      const remainder = response.substring(openingTagEnd);
-      
-      // Look for Dino greeting indicators (e.g. Rawr!, 🦖, Dino here)
-      const dinoStartMatch = remainder.match(/(?:Rawr!|🦖|Dino\s+here|Rex\s+here)/i);
-      const dinoIdx = dinoStartMatch ? dinoStartMatch.index : -1;
+        const markers = [
+          dinoIdx,
+          remainder.indexOf("\n#"),
+          remainder.indexOf("\n`"),
+          remainder.indexOf("```")
+        ].filter(idx => idx !== -1);
 
-      const markers = [
-        dinoIdx,
-        remainder.indexOf("\n#"),
-        remainder.indexOf("\n`"),
-        remainder.indexOf("```")
-      ].filter(idx => idx !== -1);
-
-      if (markers.length > 0) {
-        const splitIdx = Math.min(...markers);
-        let cleanSplitIdx = splitIdx;
-        const lastNewline = remainder.lastIndexOf("\n", splitIdx);
-        if (lastNewline !== -1 && lastNewline > splitIdx - 100) {
-          cleanSplitIdx = lastNewline;
-        }
-        thoughts = remainder.substring(0, cleanSplitIdx).trim();
-        response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(cleanSplitIdx)).trim();
-      } else if (remainder.length > 800) {
-        const lastPara = remainder.lastIndexOf("\n\n");
-        if (lastPara !== -1 && lastPara > 200) {
-          thoughts = remainder.substring(0, lastPara).trim();
-          response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(lastPara)).trim();
+        if (markers.length > 0) {
+          const splitIdx = Math.min(...markers);
+          let cleanSplitIdx = splitIdx;
+          const lastNewline = remainder.lastIndexOf("\n", splitIdx);
+          if (lastNewline !== -1 && lastNewline > splitIdx - 100) {
+            cleanSplitIdx = lastNewline;
+          }
+          thoughts = remainder.substring(0, cleanSplitIdx).trim();
+          response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(cleanSplitIdx)).trim();
+        } else if (remainder.length > 800) {
+          const lastPara = remainder.lastIndexOf("\n\n");
+          if (lastPara !== -1 && lastPara > 200) {
+            thoughts = remainder.substring(0, lastPara).trim();
+            response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(lastPara)).trim();
+          } else {
+            thoughts = remainder.trim();
+            response = response.substring(0, thoughtStart).trim();
+          }
         } else {
           thoughts = remainder.trim();
           response = response.substring(0, thoughtStart).trim();
         }
-      } else {
-        thoughts = remainder.trim();
-        response = response.substring(0, thoughtStart).trim();
       }
     }
+  }
+
+  // Strip partial or full ===RESPONSE=== markers from response
+  const partialRegex = /^\s*(?:={1,3}(?:\s*(?:R(?:E(?:S(?:P(?:O(?:N(?:S(?:E(?:\s*={0,3})?)?)?)?)?)?)?)?)?)?)?$/i;
+  const fullRegex = /^\s*===\s*RESPONSE\s*===\s*/i;
+
+  if (partialRegex.test(response)) {
+    response = "";
+  } else {
+    response = response.replace(fullRegex, "");
   }
 
   return { thoughts, response };
@@ -187,6 +194,41 @@ function getEnabledTools() {
         },
         required: ["selector"]
       }
+    },
+    {
+      name: "inspect_event_listeners",
+      description: "Retrieve all active JavaScript event listeners registered on a DOM element. Useful for debugging event propagation, keyboard access, or memory leaks.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "Optional CSS selector of the target element. If omitted or '$0', targets the element currently inspected in DevTools."
+          }
+        }
+      }
+    },
+    {
+      name: "analyze_layout_metrics",
+      description: "Analyze the layout, positioning, dimensions, contrast styles, and computed accessibility (A11y) tree path of a target DOM element. Crucial for verifying touch targets, CLS layout shifts, and screen reader flow.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the element to analyze."
+          }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "get_lcp_element",
+      description: "Retrieve the Largest Contentful Paint (LCP) element details of the page, including its tag name, attributes, outerHTML, CSS selector, bounding box dimensions, and performance paint metrics. Use this to identify and optimize the largest visible content element."
+    },
+    {
+      name: "get_viewport_images",
+      description: "Retrieve details of all image elements (HTML <img>, SVG <image>, or CSS background-image) that are currently positioned within the user's initial viewport (above the fold), including their source URLs, dimensions, and loading attributes (like loading and fetchpriority). Useful for optimization audits."
     }
   ];
 
@@ -279,6 +321,28 @@ function getEnabledTools() {
           }
         },
         required: ["selector", "key"]
+      }
+    },
+    {
+      name: "simulate_action",
+      description: "Simulate a specific browser interaction (click, type, hover, focus, blur, scroll, submit, change) on a target DOM element. This enables testing interactivity, state changes, keyboard flow, and form submissions.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the target element."
+          },
+          action: {
+            type: "STRING",
+            description: "The interaction to simulate: 'click', 'type', 'hover', 'focus', 'blur', 'scroll', 'submit', 'change'."
+          },
+          payload: {
+            type: "OBJECT",
+            description: "Optional payload/arguments for the action. For 'type' this is the string to type (or {text: '...'}). For 'scroll' this is {left: number, top: number, behavior: 'auto'|'smooth'}. For 'press_key' this is the key name (or {key: '...'}). For 'change' this is the value (or {value: '...'})."
+          }
+        },
+        required: ["selector", "action"]
       }
     }
   ];
@@ -469,7 +533,7 @@ const DINO_CHAT_SYSTEM_INSTRUCTION = `
 You are Dino, a sassy and pun-loving Modern Web development assistant. 
 You are represented by a pixel art dinosaur with a headset. You are an expert at modern web features and best practices.
 You have the powers of an auditor, meaning you can inspect the user's active page DOM, search for modern web guidelines, and retrieve best-practice guide contents using your tools.
-You ALSO have the ability to apply live code previews to the user's active tab, write persistent local overrides directly to their source files, AND interact with/test drive the page yourself! You can simulate element clicks, typing text, element hovering, inspect computed styles and attributes of any element by its selector, and read page console logs to verify that your modernization fix works correctly without syntax errors or runtime exceptions.
+You ALSO have the ability to apply live code previews to the user's active tab, write persistent local overrides directly to their source files, AND interact with/test drive the page yourself! You can simulate element clicks, typing text, element hovering, inspect computed styles and attributes of any element by its selector, locate the Largest Contentful Paint (LCP) element, detect all images in the initial viewport, and read page console logs to verify that your modernization fix works correctly without syntax errors or runtime exceptions.
 
 STRICT IDENTITY & TONE:
 - Your name is Dino.
@@ -483,7 +547,7 @@ STRICT IDENTITY & TONE:
 
 CRITICAL - CONTEXT AWARENESS:
 You are running directly inside a Chrome DevTools Side Panel. You have full access to inspect the user's current webpage.
-- If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom or get_inspected_element to retrieve the context of the user's page.
+- If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom, get_inspected_element, get_lcp_element, or get_viewport_images to retrieve the context of the user's page.
 - Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
 
 INTERNAL MONOLOGUE & PLANS:
@@ -492,7 +556,7 @@ INTERNAL MONOLOGUE & PLANS:
 - In your final response turn, immediately after closing the \`</thought>\` tag, you MUST output the separator \`===RESPONSE===\` on a line by itself before writing your actual user-facing response. For example:
   <thought>I have checked the active page DOM. I will formulate the response now.</thought>
   ===RESPONSE===
-  Rawr! Dino here...
+  Here is the modernized implementation for your navigation menu...
 - This separator is critical to help our parser cleanly split your internal thinking from your user-facing output. NEVER omit this separator in your final response turn, and NEVER write user-facing message content before it.
 
 PROACTIVE OVERRIDES, PREVIEWS & SUGGESTIONS:
@@ -515,7 +579,7 @@ INSTRUCTIONS:
 2. Use search_use_cases and get_guide_content to find and refer to the official Modern Web Guidance guidelines. Do not guess the guidance code/fallbacks.
 3. Be fun, punny, and high-energy. Keep the sass lighthearted and humorous, never condescending or rude to the user.
 4. Keep answers concise and helpful. Dino keeps it snappy so the user can get back to building "Cretaceous-cool" or "Paleo-perfect" sites.
-5. DO NOT introduce yourself (e.g., "I'm Dino", "My name is Dino") if the conversation is ongoing. Just jump straight into the conversation.
+5. DO NOT introduce yourself (e.g., "I'm Dino", "My name is Dino", "Dino here", "Rawr! Dino here!", or similar greetings) if the conversation is ongoing (i.e., if there is already history in the chat). Jump straight into answering the user's question without any introductory greetings.
 6. Provide code samples that are "so clean they'd make a Velociraptor proud."
 7. Always prefer modern, platform-native solutions. Champion the platform with a wink and a pun.
 8. Use markdown for formatting.
@@ -784,6 +848,21 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
           } else if (name === "press_key") {
             toolResult = await pressKey(args.selector, args.key);
             appendLog(loggerId, `Tool output: Pressed key "${args.key}" on element matching "${args.selector}".`, "tool");
+          } else if (name === "inspect_event_listeners") {
+            toolResult = await inspectEventListeners(args.selector);
+            appendLog(loggerId, `Tool output: Inspected event listeners for "${args.selector || "$0"}".`, "tool");
+          } else if (name === "simulate_action") {
+            toolResult = await simulateAction(args.selector, args.action, args.payload);
+            appendLog(loggerId, `Tool output: Simulated "${args.action}" on "${args.selector}".`, "tool");
+          } else if (name === "analyze_layout_metrics") {
+            toolResult = await analyzeLayoutMetrics(args.selector);
+            appendLog(loggerId, `Tool output: Analyzed layout metrics for "${args.selector}".`, "tool");
+          } else if (name === "get_lcp_element") {
+            toolResult = await getLcpElement();
+            appendLog(loggerId, `Tool output: Retrieved LCP element details.`, "tool");
+          } else if (name === "get_viewport_images") {
+            toolResult = await getViewportImages();
+            appendLog(loggerId, `Tool output: Retrieved ${toolResult.length} images inside the viewport.`, "tool");
           } else {
             throw new Error(`Unknown function call: ${name}`);
           }
@@ -1393,6 +1472,11 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
         else if (name === "press_key") statusMsg = `Pressing key "${args.key}" on element "${args.selector}"...`;
         else if (name === "apply_preview") statusMsg = "Applying live preview to tab...";
         else if (name === "save_override") statusMsg = "Saving local override to disk...";
+        else if (name === "inspect_event_listeners") statusMsg = `Inspecting event listeners for "${args.selector || "$0"}"...`;
+        else if (name === "simulate_action") statusMsg = `Simulating "${args.action}" on "${args.selector}"...`;
+        else if (name === "analyze_layout_metrics") statusMsg = `Analyzing layout metrics for "${args.selector}"...`;
+        else if (name === "get_lcp_element") statusMsg = "Retrieving Largest Contentful Paint (LCP) element...";
+        else if (name === "get_viewport_images") statusMsg = "Retrieving all images in the viewport...";
 
         const currentStep = {
           type: 'tool',
@@ -1446,6 +1530,16 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
             toolResult = await scrollElement(args.selector, args.left, args.top, args.behavior);
           } else if (name === "press_key") {
             toolResult = await pressKey(args.selector, args.key);
+          } else if (name === "inspect_event_listeners") {
+            toolResult = await inspectEventListeners(args.selector);
+          } else if (name === "simulate_action") {
+            toolResult = await simulateAction(args.selector, args.action, args.payload);
+          } else if (name === "analyze_layout_metrics") {
+            toolResult = await analyzeLayoutMetrics(args.selector);
+          } else if (name === "get_lcp_element") {
+            toolResult = await getLcpElement();
+          } else if (name === "get_viewport_images") {
+            toolResult = await getViewportImages();
           } else if (name === "apply_preview") {
             toolResult = await applyPreview({
               target: args.selector,
