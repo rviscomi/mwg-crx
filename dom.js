@@ -901,3 +901,388 @@ async function getViewportImages() {
 
   return result[0].result;
 }
+
+// --- NEW AUDITING TOOLS IMPLEMENTATIONS ---
+
+const maxNetworkBuffer = 200;
+const networkRequestsBuffer = [];
+
+if (typeof chrome !== "undefined" && chrome.devtools && chrome.devtools.network) {
+  chrome.devtools.network.onRequestFinished.addListener((request) => {
+    try {
+      const entry = {
+        url: request.request.url || "",
+        method: request.request.method || "",
+        status: request.response.status || 0,
+        httpVersion: request.response.httpVersion || "",
+        mimeType: (request.response.content && request.response.content.mimeType) || "",
+        requestHeaders: request.request.headers || [],
+        responseHeaders: request.response.headers || [],
+        requestSize: request.request.bodySize >= 0 ? request.request.bodySize : 0,
+        responseSize: request.response.bodySize >= 0 ? request.response.bodySize : 0,
+        contentSize: (request.response.content && request.response.content.size >= 0) ? request.response.content.size : 0,
+        time: request.time || 0
+      };
+      networkRequestsBuffer.push(entry);
+      if (networkRequestsBuffer.length > maxNetworkBuffer) {
+        networkRequestsBuffer.shift();
+      }
+    } catch (e) {
+      console.error("Error buffering network request:", e);
+    }
+  });
+
+  chrome.devtools.network.onNavigated.addListener(() => {
+    networkRequestsBuffer.length = 0;
+  });
+}
+
+/**
+ * Retrieve the buffered network request logs.
+ */
+async function getNetworkRequests() {
+  return networkRequestsBuffer;
+}
+
+/**
+ * Helper to fetch external text files (CSS, JS, source maps) bypassing CORS via extension context.
+ */
+async function fetchExternalText(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    return await res.text();
+  } catch (e) {
+    console.warn(`Failed to fetch external resource ${url}:`, e);
+    return "";
+  }
+}
+
+/**
+ * Simulates an interaction and measures INP (latencies) and captures LoAF entries to pinpoint blocking JS.
+ */
+async function simulateAndMeasureInp(selector, action, payload = {}) {
+  const normSelector = normalizeSelector(selector);
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  // Get starting page time via performance.now()
+  const timeResult = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => performance.now()
+  });
+  const startTime = timeResult[0].result;
+
+  // Execute the simulation action
+  await simulateAction(normSelector, action, payload);
+
+  // Wait 300ms for event handling and rendering to paint
+  await new Promise(r => setTimeout(r, 300));
+
+  // Retrieve metrics
+  const metricsResult = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: (since) => {
+      const events = (window.__mwg_event_entries || [])
+        .filter(e => e.startTime >= since)
+        .map(e => ({
+          name: e.name,
+          startTime: e.startTime,
+          duration: e.duration,
+          processingStart: e.processingStart,
+          processingEnd: e.processingEnd,
+          interactionId: e.interactionId
+        }));
+
+      const loafs = (window.__mwg_loaf_entries || [])
+        .filter(l => l.startTime >= since || (l.startTime + l.duration) >= since)
+        .map(l => ({
+          startTime: l.startTime,
+          duration: l.duration,
+          blockingDuration: l.blockingDuration,
+          renderStart: l.renderStart,
+          styleAndLayoutStart: l.styleAndLayoutStart,
+          scripts: (l.scripts || []).map(s => ({
+            invoker: s.invoker,
+            invokerType: s.invokerType,
+            sourceURL: s.sourceURL,
+            functionName: s.functionName,
+            duration: s.duration,
+            forcedStyleAndLayoutDuration: s.forcedStyleAndLayoutDuration
+          }))
+        }));
+
+      return { events, loafs };
+    },
+    args: [startTime]
+  });
+
+  const { events, loafs } = metricsResult[0].result;
+  return {
+    success: true,
+    selector: normSelector,
+    action,
+    events,
+    loafs
+  };
+}
+
+/**
+ * Normalizes state pseudo-classes and matches CSS rules against active DOM to find unused CSS rules.
+ */
+async function analyzeCssCoverage() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  // Helper to parse selectors using simple CSS block splitting
+  const parseCSSSelectors = (cssText) => {
+    const cleanCss = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+    const selectors = [];
+    const blocks = cleanCss.split('}');
+    for (let block of blocks) {
+      const openBrace = block.indexOf('{');
+      if (openBrace !== -1) {
+        let selectorPart = block.substring(0, openBrace).trim();
+        if (selectorPart.startsWith('@')) continue; // Skip @media, @keyframes, etc.
+        const parts = selectorPart.split(',');
+        for (let p of parts) {
+          const s = p.trim();
+          if (s) selectors.push(s);
+        }
+      }
+    }
+    return selectors;
+  };
+
+  // Get inline and CORS-enabled rules list, and find CORS-blocked stylesheet URLs
+  const sheetResult = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      const sheets = [];
+      for (let i = 0; i < document.styleSheets.length; i++) {
+        const sheet = document.styleSheets[i];
+        const href = sheet.href || "inline";
+        try {
+          const rules = sheet.cssRules || sheet.rules;
+          if (rules) {
+            const selectors = [];
+            for (let j = 0; j < rules.length; j++) {
+              if (rules[j].type === CSSRule.STYLE_RULE && rules[j].selectorText) {
+                selectors.push(rules[j].selectorText);
+              }
+            }
+            sheets.push({ href, selectors, corsBlocked: false });
+          } else {
+            sheets.push({ href, corsBlocked: true });
+          }
+        } catch (e) {
+          sheets.push({ href, corsBlocked: true });
+        }
+      }
+      return sheets;
+    }
+  });
+
+  const rawSheets = sheetResult[0].result;
+  const processedSheets = [];
+
+  // Fetch and parse CORS-blocked sheets
+  for (const sheet of rawSheets) {
+    if (sheet.corsBlocked && sheet.href && sheet.href !== "inline") {
+      const cssText = await fetchExternalText(sheet.href);
+      if (cssText) {
+        const selectors = parseCSSSelectors(cssText);
+        processedSheets.push({ href: sheet.href, selectors });
+      } else {
+        processedSheets.push({ href: sheet.href, selectors: [], error: "Failed to fetch CSS content" });
+      }
+    } else {
+      processedSheets.push({ href: sheet.href, selectors: sheet.selectors || [] });
+    }
+  }
+
+  // Compile checklist of selectors
+  const allSelectorsWithHref = [];
+  for (const sheet of processedSheets) {
+    for (const sel of sheet.selectors) {
+      allSelectorsWithHref.push({ href: sheet.href, selector: sel });
+    }
+  }
+
+  // Page script to run querySelector checks on chunks of selectors
+  const selectorCheckingFunc = (list) => {
+    const results = [];
+    
+    const normalizeCssSelector = (selector) => {
+      return selector
+        .replace(/::[a-zA-Z0-9_-]+/g, "")
+        .replace(/:[a-zA-Z0-9_-]+(\([^)]*\))?/g, (match) => {
+          if (match.startsWith(':nth-') || match.startsWith(':first-') || match.startsWith(':last-') || match.startsWith(':only-') || match.startsWith(':not')) {
+            return match;
+          }
+          return "";
+        })
+        .trim();
+    };
+
+    for (const entry of list) {
+      try {
+        const norm = normalizeCssSelector(entry.selector);
+        if (!norm) {
+          results.push({ ...entry, used: true });
+          continue;
+        }
+        const used = document.querySelector(norm) !== null;
+        results.push({ ...entry, used });
+      } catch (e) {
+        results.push({ ...entry, used: true }); // Assume used on parse errors
+      }
+    }
+    return results;
+  };
+
+  // Run DOM check in chunks of 500 rules
+  const chunkSize = 500;
+  const checkedResults = [];
+  for (let i = 0; i < allSelectorsWithHref.length; i += chunkSize) {
+    const chunk = allSelectorsWithHref.slice(i, i + chunkSize);
+    const checkResult = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: selectorCheckingFunc,
+      args: [chunk]
+    });
+    checkedResults.push(...checkResult[0].result);
+  }
+
+  // Compile summary details
+  const summaryBySheet = {};
+  let totalUnused = 0;
+  let totalRules = checkedResults.length;
+
+  for (const r of checkedResults) {
+    if (!summaryBySheet[r.href]) {
+      summaryBySheet[r.href] = { total: 0, unused: 0, unusedSamples: [] };
+    }
+    summaryBySheet[r.href].total++;
+    if (!r.used) {
+      summaryBySheet[r.href].unused++;
+      totalUnused++;
+      if (summaryBySheet[r.href].unusedSamples.length < 10) {
+        summaryBySheet[r.href].unusedSamples.push(r.selector);
+      }
+    }
+  }
+
+  return {
+    success: true,
+    totalRules,
+    totalUnused,
+    unusedPercentage: totalRules > 0 ? ((totalUnused / totalRules) * 100).toFixed(1) + "%" : "0%",
+    stylesheets: summaryBySheet
+  };
+}
+
+/**
+ * Scans JavaScript bundles on the page, fetches source maps if publicly deployed,
+ * and maps module dependency weights. Falls back to keyword/signature scan for heavy libraries.
+ */
+async function analyzeJsDependencies() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  // Find script tags
+  const scriptsResult = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      return Array.from(document.querySelectorAll('script[src]')).map(s => s.src);
+    }
+  });
+
+  const scriptUrls = scriptsResult[0].result;
+  const analysis = [];
+
+  for (const url of scriptUrls) {
+    try {
+      const scriptText = await fetchExternalText(url);
+      if (!scriptText) continue;
+
+      // Scan for sourceMappingURL
+      const match = scriptText.match(/\/\/#\s*sourceMappingURL=(.+)$/m);
+      if (match && match[1]) {
+        const mapUrlString = match[1].trim();
+        let mapUrl = mapUrlString;
+        try {
+          mapUrl = new URL(mapUrlString, url).href;
+        } catch (e) {}
+
+        const mapText = await fetchExternalText(mapUrl);
+        if (mapText) {
+          let map;
+          try {
+            map = JSON.parse(mapText);
+          } catch(e) {}
+          
+          if (map) {
+            const sources = map.sources || [];
+            const sourcesContent = map.sourcesContent || [];
+            const packages = {};
+            let nodeModulesTotalSize = 0;
+            let totalSize = 0;
+
+            for (let i = 0; i < sources.length; i++) {
+              const src = sources[i];
+              const content = sourcesContent[i] || "";
+              const size = content.length || 0;
+              totalSize += size;
+
+              const nodeMatch = src.match(/node_modules\/([^/]+)/);
+              if (nodeMatch && nodeMatch[1]) {
+                const pkgName = nodeMatch[1];
+                packages[pkgName] = (packages[pkgName] || 0) + size;
+                nodeModulesTotalSize += size;
+              }
+            }
+
+            analysis.push({
+              scriptUrl: url,
+              hasSourceMap: true,
+              mapUrl,
+              totalSize,
+              nodeModulesSize: nodeModulesTotalSize,
+              dependencies: packages
+            });
+            continue;
+          }
+        }
+      }
+
+      // Fallback: Check for library patterns in compiled source
+      const signatures = {
+        lodash: /lodash|_\.map|_\.filter|_\.debounce|_\.throttle/i,
+        moment: /moment\s*\.\s*(?:fn|utc|duration|locale)/i,
+        jquery: /jQuery\s*\.\s*(?:fn|ajax|find)/
+      };
+
+      const detected = [];
+      for (const [lib, regex] of Object.entries(signatures)) {
+        if (regex.test(scriptText)) {
+          detected.push(lib);
+        }
+      }
+
+      analysis.push({
+        scriptUrl: url,
+        hasSourceMap: false,
+        detectedSignatures: detected
+      });
+    } catch (err) {
+      console.warn("Failed to analyze JS dependencies for: " + url, err);
+    }
+  }
+
+  return {
+    success: true,
+    scriptsAudited: analysis
+  };
+}
+

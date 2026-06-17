@@ -13,7 +13,7 @@ let config = {
 
 async function loadConfig() {
   const data = await chrome.storage.local.get([
-    "apiKey", "model", "apiTier", "baseUrl", "baselineTarget",
+    "apiKey", "model", "baseUrl", "baselineTarget",
     "capInteraction", "capLogs", "capPreview", "capOverride"
   ]);
 
@@ -24,10 +24,6 @@ async function loadConfig() {
   if (data.model) {
     config.model = data.model;
     document.getElementById("settings-model").value = data.model;
-  }
-  if (data.apiTier) {
-    config.apiTier = data.apiTier;
-    document.getElementById("settings-tier").value = data.apiTier;
   }
   if (data.baseUrl) {
     // Migrate legacy raw GitHub baseUrl to the Worker API URL
@@ -59,7 +55,6 @@ async function saveConfig(event) {
   if (event) event.preventDefault();
   const apiKey = document.getElementById("settings-api-key").value.trim();
   const model = document.getElementById("settings-model").value;
-  const apiTier = document.getElementById("settings-tier").value;
   const baselineTarget = document.getElementById("settings-baseline").value;
   let baseUrl = document.getElementById("settings-url").value.trim();
   const capInteraction = document.getElementById("settings-cap-interaction").checked;
@@ -70,7 +65,7 @@ async function saveConfig(event) {
   if (!baseUrl.endsWith("/")) baseUrl += "/";
 
   config = {
-    apiKey, model, apiTier, baseUrl, baselineTarget,
+    apiKey, model, apiTier: "free", baseUrl, baselineTarget,
     capInteraction, capLogs, capPreview, capOverride
   };
   await chrome.storage.local.set(config);

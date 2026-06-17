@@ -46,6 +46,9 @@ async function loadAndRestoreChat() {
     }
     
     chatHistory.forEach((msg) => {
+      if (msg.hidden || (msg.role === "user" && msg.content && msg.content.startsWith("I have a question about this modernization audit result:"))) {
+        return;
+      }
       const bubble = appendChatMessage(msg.role, msg.content);
       if (msg.role === "model" && msg.citations && msg.citations.length > 0) {
         renderGreetingCitations(msg.citations, bubble);
@@ -323,16 +326,23 @@ async function startChatWithOpportunity(opp) {
     
     addMessageActions(modelMsgBubble, greeting);
 
+    let codeContent = "";
+    if (opp.changes && opp.changes.length > 0) {
+      codeContent = opp.changes.map((c, idx) => `Change #${idx + 1} (Target: ${c.target || opp.target || 'document'}):\nLegacy Code:\n${c.originalCode || ''}\nModernized Code:\n${c.modernizedCode || ''}\n`).join("\n");
+    } else {
+      codeContent = `${opp.originalCode ? `Legacy Code:\n${opp.originalCode}\n` : ''}${opp.modernizedCode ? `Modernized Code:\n${opp.modernizedCode}\n` : ''}`;
+    }
+
     chatHistory = [
       {
         role: "user",
+        hidden: true,
         content: `I have a question about this modernization audit result:
 Title: ${opp.title}
 Impact: ${opp.impact}
 Target: ${opp.target || 'document'}
 Description: ${opp.description}
-${opp.originalCode ? `Legacy Code:\n${opp.originalCode}\n` : ''}
-${opp.modernizedCode ? `Modernized Code:\n${opp.modernizedCode}\n` : ''}
+${codeContent}
 ${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
       },
       {
@@ -353,16 +363,23 @@ ${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
     }
     addMessageActions(modelMsgBubble, fallback);
     
+    let codeContent = "";
+    if (opp.changes && opp.changes.length > 0) {
+      codeContent = opp.changes.map((c, idx) => `Change #${idx + 1} (Target: ${c.target || opp.target || 'document'}):\nLegacy Code:\n${c.originalCode || ''}\nModernized Code:\n${c.modernizedCode || ''}\n`).join("\n");
+    } else {
+      codeContent = `${opp.originalCode ? `Legacy Code:\n${opp.originalCode}\n` : ''}${opp.modernizedCode ? `Modernized Code:\n${opp.modernizedCode}\n` : ''}`;
+    }
+
     chatHistory = [
       {
         role: "user",
+        hidden: true,
         content: `I have a question about this modernization audit result:
 Title: ${opp.title}
 Impact: ${opp.impact}
 Target: ${opp.target || 'document'}
 Description: ${opp.description}
-${opp.originalCode ? `Legacy Code:\n${opp.originalCode}\n` : ''}
-${opp.modernizedCode ? `Modernized Code:\n${opp.modernizedCode}\n` : ''}
+${codeContent}
 ${opp.useCaseId ? `Use Case / Guide ID: ${opp.useCaseId}\n` : ''}`
       },
       {
@@ -727,6 +744,38 @@ function appendChatMessage(role, content, isTyping = false) {
   return role === "model" ? msgDiv.querySelector(".message-bubble") : msgDiv;
 }
 
+function getFriendlyErrorMessage(err) {
+  const msg = err.message || "";
+  
+  if (msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("experiencing high demand")) {
+    let response = `Rawr! 🦖 The Gemini API is currently experiencing a massive meteor shower of demand (Error 503)! ☄️ Spikes in demand are usually temporary. Please try again in a few moments, or check back once the dust settles!`;
+    
+    if (config.model === "gemini-3.5-flash") {
+      response += `\n\nWould you like to switch to a lower model like **Gemini 3.1 Flash Lite** to see if it has more availability?\n\n[⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
+    } else if (config.model === "gemini-3.1-pro-preview") {
+      response += `\n\nWould you like to switch to a faster model like **Gemini 3.5 Flash** or **Gemini 3.1 Flash Lite**?\n\n[⚙️ Switch model to Gemini 3.5 Flash](suggest:Switch model to Gemini 3.5 Flash) [⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
+    } else if (config.model === "gemini-3-flash-preview") {
+      response += `\n\nWould you like to switch to **Gemini 3.1 Flash Lite**?\n\n[⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
+    }
+    
+    return response;
+  }
+  
+  if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+    return `Rawr! 🦖 Slow down, swift raptor! We have hit the Gemini API rate limit (Error 429). 🐾 Please take a short breather and try sending your message again in a minute!`;
+  }
+
+  if (msg.includes("API Key is missing") || msg.includes("API key is invalid") || msg.includes("INVALID_ARGUMENT") || msg.includes("400")) {
+    return `Rawr! 🦖 It looks like there's an issue with your Gemini API key (Error 400). Please check your settings under the Settings tab to ensure a valid API key is configured!`;
+  }
+
+  if (msg.includes("Failed to fetch") || msg.includes("network error") || msg.includes("offline")) {
+    return `Rawr! 🦖 Dino lost connection to the prehistoric server! Please check your internet connection and try again. 🌐🐾`;
+  }
+  
+  return `Error: ${err.message}`;
+}
+
 async function handleSendChatMessage() {
   stopListening();
   const chatInput = document.getElementById("chat-input");
@@ -745,6 +794,53 @@ async function handleSendChatMessage() {
   chatInput.style.height = "auto";
 
   appendChatMessage("user", message);
+
+  if (message.startsWith("Switch model to ")) {
+    const targetModelName = message.substring("Switch model to ".length).trim();
+    let modelValue = "";
+    let modelLabel = "";
+    if (targetModelName.includes("3.5 Flash") || targetModelName.includes("gemini-3.5-flash")) {
+      modelValue = "gemini-3.5-flash";
+      modelLabel = "Gemini 3.5 Flash";
+    } else if (targetModelName.includes("3.1 Flash Lite") || targetModelName.includes("gemini-3.1-flash-lite")) {
+      modelValue = "gemini-3.1-flash-lite";
+      modelLabel = "Gemini 3.1 Flash Lite";
+    } else if (targetModelName.includes("3.1 Pro") || targetModelName.includes("gemini-3.1-pro-preview")) {
+      modelValue = "gemini-3.1-pro-preview";
+      modelLabel = "Gemini 3.1 Pro Preview";
+    } else if (targetModelName.includes("3 Flash Preview") || targetModelName.includes("gemini-3-flash-preview")) {
+      modelValue = "gemini-3-flash-preview";
+      modelLabel = "Gemini 3.0 Flash Preview";
+    }
+    
+    if (modelValue) {
+      const modelMsgBubble = appendChatMessage("model", "", true);
+      const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+      try {
+        config.model = modelValue;
+        const select = document.getElementById("settings-model");
+        if (select) {
+          select.value = modelValue;
+        }
+        await chrome.storage.local.set({ model: modelValue });
+        
+        responseContent.innerHTML = "";
+        const msg = `Rawr! 🦖 I've switched my brain to **${modelLabel}**! Let's try sending that query again and see if we can bypass the demand bottleneck! 🐾`;
+        renderDinoResponse(msg, responseContent);
+        
+        chatHistory.push({ role: "user", content: message });
+        chatHistory.push({ role: "model", content: msg });
+        await persistCurrentChatHistory();
+        
+        showToast(`Switched model to ${modelLabel}`, "success");
+      } catch (err) {
+        responseContent.innerHTML = "";
+        renderDinoResponse(`Error switching model: ${err.message}`, responseContent);
+        showToast(`Failed to switch model: ${err.message}`, "error");
+      }
+      return;
+    }
+  }
 
   isChatGenerating = true;
   
@@ -927,7 +1023,15 @@ async function handleSendChatMessage() {
         responseContent.innerHTML = `<span style="color: var(--warning-color); font-style: italic;">Dino was stopped in his tracks! 🦖🐾</span>`;
       } else {
         console.error(err);
-        responseContent.textContent = `Error: ${err.message}`;
+        const friendlyMsg = getFriendlyErrorMessage(err);
+        renderDinoResponse(friendlyMsg, responseContent);
+
+        // Restore the input value so the user doesn't lose their message!
+        if (chatInput && !chatInput.value) {
+          chatInput.value = message;
+          chatInput.style.height = "auto";
+          chatInput.style.height = chatInput.scrollHeight + "px";
+        }
       }
     }
   } finally {

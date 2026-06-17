@@ -217,15 +217,17 @@ async function runAudit() {
   let focusConstraint = "";
   let focusInstructions = "";
 
-  if (focus === "accessibility") {
+  if (focus === "full") {
+    focusInstructions = "\n- You MUST perform a Full Page Audit. In your first turn, call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+  } else if (focus === "accessibility") {
     focusConstraint = "\nCategory constraint: 'accessibility'";
-    focusInstructions = "\n- You MUST perform a targeted Accessibility Audit. Start by calling list_use_cases to list all guidelines in the 'accessibility' category, get their guide contents using get_guide_content, and then audit the page DOM against those guidelines.";
+    focusInstructions = "\n- You MUST perform a targeted Accessibility Audit. Since accessibility best practices are also embedded within other use case categories (e.g., forms, CSS layout, media), you MUST retrieve the entire list of guidelines in your first turn by calling list_use_cases (without a category filter), along with get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel. Do not restrict yourself only to files labeled as the accessibility category; evaluate the page against any guideline that has accessibility implications.";
   } else if (focus === "performance") {
     focusConstraint = "\nCategory constraint: 'performance'";
-    focusInstructions = "\n- You MUST perform a targeted Performance Audit. Start by calling list_use_cases to list all guidelines in the 'performance' category, get their guide contents using get_guide_content, and then audit the page DOM against those guidelines.";
+    focusInstructions = "\n- You MUST perform a targeted Performance Audit. In your first turn, call list_use_cases (filtering for 'performance' category), get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   } else if (focus === "security-privacy") {
     focusConstraint = "\nCategory constraint: 'security' or 'privacy'";
-    focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. Start by listing and reading all guidelines in the 'security' and 'privacy' categories using list_use_cases and get_guide_content, and then audit the page DOM against those guidelines.";
+    focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. In your first turn, call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   }
 
   let timerInterval = startLoggerTimer("audit-timer");

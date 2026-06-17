@@ -75,7 +75,26 @@ function renderOpportunities(container, list, filterTraining = false) {
           <span class="verify-text"></span>
         </div>
         
-        ${opp.originalCode || opp.modernizedCode ? `
+        ${opp.changes && opp.changes.length > 0 ? `
+        <div class="diff-container">
+          <span class="diff-header">Code Refactoring (Multiple Changes):</span>
+          ${opp.changes.map((c, idx) => `
+            <div class="diff-change-item">
+              <div class="diff-change-target">Target: ${escapeHtml(c.target || opp.target || "document")}</div>
+              <div class="diff-grid">
+                <div class="diff-pane">
+                  <div class="diff-pane-title">Legacy / Current</div>
+                  <pre><code class="code-del">${escapeHtml(c.originalCode || "// N/A")}</code></pre>
+                </div>
+                <div class="diff-pane">
+                  <div class="diff-pane-title">Modernized Solution</div>
+                  <pre><code class="code-add">${escapeHtml(c.modernizedCode || "// N/A")}</code></pre>
+                </div>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+        ` : (opp.originalCode || opp.modernizedCode ? `
         <div class="diff-container">
           <span class="diff-header">Code Refactoring:</span>
           <div class="diff-grid">
@@ -89,14 +108,14 @@ function renderOpportunities(container, list, filterTraining = false) {
             </div>
           </div>
         </div>
-        ` : ""}
+        ` : "")}
 
         <div class="opp-actions-row">
-          ${opp.modernizedCode ? `
+          ${opp.modernizedCode || (opp.changes && opp.changes.length > 0) ? `
           <button class="btn btn-secondary btn-apply-preview" ${isNetwork ? "disabled title='Cannot apply preview to network assets'" : ""}>
             <span>✨ Apply Preview</span>
           </button>
-          <button class="btn btn-secondary btn-save-override" ${!opp.originalCode ? "disabled title='Original legacy snippet required'" : ""}>
+          <button class="btn btn-secondary btn-save-override" ${(!opp.originalCode && (!opp.changes || opp.changes.length === 0)) ? "disabled title='Original legacy snippet required'" : ""}>
             <span>💾 Save to Overrides</span>
           </button>
           ` : ""}
@@ -283,7 +302,7 @@ function escapeHtml(str) {
 }
 
 async function applyPreview(opp, card) {
-  if (!opp.modernizedCode) {
+  if (!opp.modernizedCode && (!opp.changes || opp.changes.length === 0)) {
     showToast("No modernized code snippet to preview.", "warning");
     return;
   }
@@ -299,149 +318,164 @@ async function applyPreview(opp, card) {
   try {
     const result = await chrome.scripting.executeScript({
       target: { tabId: tabId },
-      func: (selector, code, originalCode) => {
-        code = code.trim();
+      func: (selector, code, originalCode, changes) => {
+        const applyOne = (sel, cd, orig) => {
+          cd = cd.trim();
 
-        const setElementHTML = (el, htmlCode) => {
-          if (el.parentNode === document) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlCode, "text/html");
-            const newHtmlEl = doc.documentElement;
-            if (newHtmlEl) {
-              while (el.attributes.length > 0) el.removeAttribute(el.attributes[0].name);
-              for (const attr of newHtmlEl.attributes) {
-                el.setAttribute(attr.name, attr.value);
-              }
-              el.innerHTML = newHtmlEl.innerHTML;
-            }
-          } else {
-            el.outerHTML = htmlCode;
-          }
-        };
-
-        // Helper to check if string is probably CSS
-        const isCSS = (str) => {
-          if (str.startsWith("<")) return false;
-          return str.includes("{") || (str.includes(":") && str.includes(";"));
-        };
-
-        // Helper to check if string is probably HTML
-        const isHTML = (str) => {
-          return str.startsWith("<");
-        };
-
-        // Helper to check if string is a list of HTML attributes
-        const isAttributeList = (str) => {
-          if (str.startsWith("<") || !str.includes("=") || str.includes("{")) return false;
-          try {
-            const testDiv = document.createElement("div");
-            testDiv.innerHTML = `<span ${str}></span>`;
-            const span = testDiv.firstElementChild;
-            return span && span.attributes.length > 0 && Array.from(span.attributes).every(attr => attr.name !== "undefined");
-          } catch (e) {
-            return false;
-          }
-        };
-
-        try {
-          if (isAttributeList(code) && selector && selector !== "document") {
-            const elements = document.querySelectorAll(selector);
-            if (elements.length > 0) {
-              const testDiv = document.createElement("div");
-              testDiv.innerHTML = `<span ${code}></span>`;
-              const attrs = Array.from(testDiv.firstElementChild.attributes);
-              elements.forEach(el => {
-                attrs.forEach(attr => {
+          const setElementHTML = (el, htmlCode) => {
+            if (el.parentNode === document) {
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(htmlCode, "text/html");
+              const newHtmlEl = doc.documentElement;
+              if (newHtmlEl) {
+                while (el.attributes.length > 0) el.removeAttribute(el.attributes[0].name);
+                for (const attr of newHtmlEl.attributes) {
                   el.setAttribute(attr.name, attr.value);
-                });
-              });
-              return { success: true, message: `Applied attributes (${attrs.map(a => a.name).join(", ")}) to elements matching "${selector}".` };
-            }
-          }
-
-          if (isCSS(code)) {
-            // CSS Injection
-            if (selector === "document" || code.includes("{")) {
-              const style = document.createElement("style");
-              style.className = "mwg-preview-styles";
-              style.textContent = code;
-              document.head.appendChild(style);
-              return { success: true, message: "Applied CSS preview styling to document!" };
+                }
+                el.innerHTML = newHtmlEl.innerHTML;
+              }
             } else {
-              const elements = document.querySelectorAll(selector);
-              if (elements.length === 0) return { error: `Selector "${selector}" not found on page.` };
-              elements.forEach(el => { el.style.cssText += ";" + code; });
-              return { success: true, message: `Applied inline styles to ${elements.length} element(s).` };
+              el.outerHTML = htmlCode;
             }
-          }
+          };
 
-          if (isHTML(code)) {
-            // HTML Injection / Overriding
+          // Helper to check if string is probably CSS
+          const isCSS = (str) => {
+            if (str.startsWith("<")) return false;
+            return str.includes("{") || (str.includes(":") && str.includes(";"));
+          };
 
-            // Helper to match elements by outerHTML string
-            const findElementByHTML = (htmlSnippet) => {
-              if (!htmlSnippet) return null;
-              const clean = (h) => h.replace(/\s+/g, ' ').trim();
-              const targetClean = clean(htmlSnippet);
-              const all = document.body.querySelectorAll('*');
-              for (const el of all) {
-                if (clean(el.outerHTML) === targetClean) return el;
-              }
-              return null;
-            };
+          // Helper to check if string is probably HTML
+          const isHTML = (str) => {
+            return str.startsWith("<");
+          };
 
-            // 1. Try finding by originalCode match
-            if (originalCode) {
-              const matchedEl = findElementByHTML(originalCode);
-              if (matchedEl) {
-                setElementHTML(matchedEl, code);
-                return { success: true, message: "Successfully replaced legacy element on page!" };
-              }
+          // Helper to check if string is a list of HTML attributes
+          const isAttributeList = (str) => {
+            if (str.startsWith("<") || !str.includes("=") || str.includes("{")) return false;
+            try {
+              const testDiv = document.createElement("div");
+              testDiv.innerHTML = `<span ${str}></span>`;
+              const span = testDiv.firstElementChild;
+              return span && span.attributes.length > 0 && Array.from(span.attributes).every(attr => attr.name !== "undefined");
+            } catch (e) {
+              return false;
             }
+          };
 
-            // 2. Try replacing by selector if it's not "document"
-            if (selector && selector !== "document") {
-              const elements = document.querySelectorAll(selector);
+          try {
+            if (isAttributeList(cd) && sel && sel !== "document") {
+              const elements = document.querySelectorAll(sel);
               if (elements.length > 0) {
-                elements.forEach(el => { setElementHTML(el, code); });
-                return { success: true, message: `Overrode content of ${elements.length} element(s) matching "${selector}"!` };
+                const testDiv = document.createElement("div");
+                testDiv.innerHTML = `<span ${cd}></span>`;
+                const attrs = Array.from(testDiv.firstElementChild.attributes);
+                elements.forEach(el => {
+                  attrs.forEach(attr => {
+                    el.setAttribute(attr.name, attr.value);
+                  });
+                });
+                return { success: true, message: `Applied attributes (${attrs.map(a => a.name).join(", ")}) to elements matching "${sel}".` };
               }
             }
 
-            // 3. Try finding tag matching the modernized code root tag (e.g. replacement of header or nav)
-            const tagMatch = code.match(/^<([a-zA-Z0-9:-]+)/);
-            if (tagMatch) {
-              const tagName = tagMatch[1].toLowerCase();
-              if (["header", "nav", "main", "footer"].includes(tagName)) {
-                const existingEl = document.querySelector(tagName);
-                if (existingEl) {
-                  setElementHTML(existingEl, code);
-                  return { success: true, message: `Replaced existing <${tagName}> element on the page!` };
+            if (isCSS(cd)) {
+              // CSS Injection
+              if (sel === "document" || cd.includes("{")) {
+                const style = document.createElement("style");
+                style.className = "mwg-preview-styles";
+                style.textContent = cd;
+                document.head.appendChild(style);
+                return { success: true, message: "Applied CSS preview styling to document!" };
+              } else {
+                const elements = document.querySelectorAll(sel);
+                if (elements.length === 0) return { error: `Selector "${sel}" not found on page.` };
+                elements.forEach(el => { el.style.cssText += ";" + cd; });
+                return { success: true, message: `Applied inline styles to ${elements.length} element(s).` };
+              }
+            }
+
+            if (isHTML(cd)) {
+              // HTML Injection / Overriding
+
+              // Helper to match elements by outerHTML string
+              const findElementByHTML = (htmlSnippet) => {
+                if (!htmlSnippet) return null;
+                const clean = (h) => h.replace(/\s+/g, ' ').trim();
+                const targetClean = clean(htmlSnippet);
+                const all = document.body.querySelectorAll('*');
+                for (const el of all) {
+                  if (clean(el.outerHTML) === targetClean) return el;
+                }
+                return null;
+              };
+
+              // 1. Try finding by originalCode match
+              if (orig) {
+                const matchedEl = findElementByHTML(orig);
+                if (matchedEl) {
+                  setElementHTML(matchedEl, cd);
+                  return { success: true, message: "Successfully replaced legacy element on page!" };
                 }
               }
+
+              // 2. Try replacing by selector if it's not "document"
+              if (sel && sel !== "document") {
+                const elements = document.querySelectorAll(sel);
+                if (elements.length > 0) {
+                  elements.forEach(el => { setElementHTML(el, cd); });
+                  return { success: true, message: `Overrode content of ${elements.length} element(s) matching "${sel}"!` };
+                }
+              }
+
+              // 3. Try finding tag matching the modernized code root tag (e.g. replacement of header or nav)
+              const tagMatch = cd.match(/^<([a-zA-Z0-9:-]+)/);
+              if (tagMatch) {
+                const tagName = tagMatch[1].toLowerCase();
+                if (["header", "nav", "main", "footer"].includes(tagName)) {
+                  const existingEl = document.querySelector(tagName);
+                  if (existingEl) {
+                    setElementHTML(existingEl, cd);
+                    return { success: true, message: `Replaced existing <${tagName}> element on the page!` };
+                  }
+                }
+              }
+
+              // 4. Default fallback: prepend to body (useful for accessibility skip links, headers)
+              const container = document.createElement("div");
+              container.className = "mwg-preview-html";
+              container.innerHTML = cd;
+              document.body.prepend(container);
+              return { success: true, message: "Prepended HTML preview to the top of page body!" };
             }
 
-            // 4. Default fallback: prepend to body (useful for accessibility skip links, headers)
-            const container = document.createElement("div");
-            container.className = "mwg-preview-html";
-            container.innerHTML = code;
-            document.body.prepend(container);
-            return { success: true, message: "Prepended HTML preview to the top of page body!" };
+            // JS fallback
+            const script = document.createElement("script");
+            script.className = "mwg-preview-script";
+            script.textContent = cd;
+            document.body.appendChild(script);
+            script.remove();
+            return { success: true, message: "Executed preview JS script!" };
+
+          } catch (err) {
+            return { error: err.message };
           }
+        };
 
-          // JS fallback
-          const script = document.createElement("script");
-          script.className = "mwg-preview-script";
-          script.textContent = code;
-          document.body.appendChild(script);
-          script.remove();
-          return { success: true, message: "Executed preview JS script!" };
-
-        } catch (err) {
-          return { error: err.message };
+        if (changes && Array.isArray(changes) && changes.length > 0) {
+          const results = [];
+          for (const change of changes) {
+            const res = applyOne(change.target || selector, change.modernizedCode, change.originalCode);
+            results.push(res);
+          }
+          const failed = results.find(r => r.error);
+          if (failed) return { error: failed.error };
+          return { success: true, message: `Applied ${results.length} preview changes successfully!` };
+        } else {
+          return applyOne(selector, code, originalCode);
         }
       },
-      args: [opp.target || "document", opp.modernizedCode, opp.originalCode || ""]
+      args: [opp.target || "document", opp.modernizedCode || "", opp.originalCode || "", opp.changes || null]
     });
 
     const res = result[0]?.result;
@@ -570,14 +604,18 @@ Output your verification report STRICTLY as a JSON object matching this schema:
 
 function saveOverride(opp) {
   return new Promise((resolve) => {
-    if (!opp.originalCode || !opp.modernizedCode) {
+    const changes = opp.changes && opp.changes.length > 0 ? opp.changes : [{
+      target: opp.target,
+      originalCode: opp.originalCode,
+      modernizedCode: opp.modernizedCode
+    }];
+
+    const invalidChange = changes.find(c => !c.originalCode || !c.modernizedCode);
+    if (invalidChange) {
       showToast("Original and modernized code snippets are required to save overrides.", "warning");
       resolve({ success: false, error: "Original and modernized code snippets are required." });
       return;
     }
-
-    const legacySnippet = opp.originalCode.trim();
-    const modernSnippet = opp.modernizedCode.trim();
 
     // Create a regex that is flexible with whitespaces, quotes, and self-closing slashes
     const makeFlexibleRegex = (snippet) => {
@@ -588,13 +626,10 @@ function saveOverride(opp) {
       return new RegExp(pattern);
     };
 
-    const regex = makeFlexibleRegex(legacySnippet);
-    const regexModern = makeFlexibleRegex(modernSnippet);
-
     showToast("Scanning page resources...", "info");
 
     chrome.devtools.inspectedWindow.getResources((resources) => {
-      let found = false;
+      let foundAny = false;
       let checkedCount = 0;
       
       // Filter to scripts, stylesheets, and document
@@ -611,36 +646,59 @@ function saveOverride(opp) {
       textResources.forEach(res => {
         res.getContent((content) => {
           checkedCount++;
-          if (found) return;
-
-          if (content && regex.test(content)) {
-            found = true;
-            const updatedContent = content.replace(regex, modernSnippet);
-            res.setContent(updatedContent, true, (error) => {
-              if (error && error.code !== "OK") {
-                showToast(`Failed to save override: ${error.message || JSON.stringify(error)}`, "error");
-                resolve({ success: false, error: error.message || JSON.stringify(error) });
+          if (!content) {
+            if (checkedCount === textResources.length) {
+              if (foundAny) {
+                resolve({ success: true, message: "Successfully saved overrides!" });
               } else {
-                showToast(`Successfully saved override to ${res.url.split('/').pop()}!`, "success");
-                resolve({ success: true, message: `Successfully saved override to ${res.url.split('/').pop()}!` });
+                showToast("Could not find any of the legacy code snippets in page resources.", "warning");
+                resolve({ success: false, error: "Could not find any legacy code snippets in page resources." });
               }
-            });
-          } else if (content && regexModern.test(content)) {
-            found = true;
-            res.setContent(content, true, (error) => {
-              if (error && error.code !== "OK") {
-                showToast(`Failed to save override: ${error.message || JSON.stringify(error)}`, "error");
-                resolve({ success: false, error: error.message || JSON.stringify(error) });
-              } else {
-                showToast(`Successfully saved override (committed preview) to ${res.url.split('/').pop()}!`, "success");
-                resolve({ success: true, message: `Successfully saved override (committed preview) to ${res.url.split('/').pop()}!` });
-              }
-            });
+            }
+            return;
           }
 
-          if (checkedCount === textResources.length && !found) {
-            showToast("Could not find the exact legacy code snippet in any page resources.", "warning");
-            resolve({ success: false, error: "Could not find the exact legacy code snippet in any page resources." });
+          let updatedContent = content;
+          let resourceModified = false;
+
+          changes.forEach(change => {
+            const legacySnippet = change.originalCode.trim();
+            const modernSnippet = change.modernizedCode.trim();
+            const regex = makeFlexibleRegex(legacySnippet);
+            const regexModern = makeFlexibleRegex(modernSnippet);
+
+            if (regex.test(updatedContent)) {
+              updatedContent = updatedContent.replace(regex, modernSnippet);
+              resourceModified = true;
+              foundAny = true;
+            } else if (regexModern.test(updatedContent)) {
+              // Already modernized
+              resourceModified = true;
+              foundAny = true;
+            }
+          });
+
+          if (resourceModified) {
+            res.setContent(updatedContent, true, (error) => {
+              if (error && error.code !== "OK") {
+                showToast(`Failed to save override to ${res.url.split('/').pop()}: ${error.message || JSON.stringify(error)}`, "error");
+              } else {
+                showToast(`Successfully saved override to ${res.url.split('/').pop()}!`, "success");
+              }
+
+              if (checkedCount === textResources.length) {
+                resolve({ success: true, message: "Successfully saved overrides!" });
+              }
+            });
+          } else {
+            if (checkedCount === textResources.length) {
+              if (foundAny) {
+                resolve({ success: true, message: "Successfully saved overrides!" });
+              } else {
+                showToast("Could not find any of the legacy code snippets in page resources.", "warning");
+                resolve({ success: false, error: "Could not find any legacy code snippets in page resources." });
+              }
+            }
           }
         });
       });

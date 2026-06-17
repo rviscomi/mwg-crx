@@ -229,8 +229,43 @@ function getEnabledTools() {
     {
       name: "get_viewport_images",
       description: "Retrieve details of all image elements (HTML <img>, SVG <image>, or CSS background-image) that are currently positioned within the user's initial viewport (above the fold), including their source URLs, dimensions, and loading attributes (like loading and fetchpriority). Useful for optimization audits."
+    },
+    {
+      name: "get_network_requests",
+      description: "Retrieve the buffer of captured HTTP/HTTPS network requests from the active tab. Use this to audit HTTP/3 usage, check for uncompressed assets, detect bloated JSON payloads, or spot third-party trackers."
+    },
+    {
+      name: "simulate_and_measure_inp",
+      description: "Simulate a specific user interaction and measure layout shifts, interaction latency, and retrieve details of any JavaScript scripts blocking the main thread (using Long Animation Frames).",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          selector: {
+            type: "STRING",
+            description: "CSS selector of the target element to interact with."
+          },
+          action: {
+            type: "STRING",
+            description: "The interaction to simulate: 'click', 'type', 'hover', 'scroll', 'press_key'."
+          },
+          payload: {
+            type: "OBJECT",
+            description: "Optional arguments for the action (e.g. {text: 'value'} for type, {left: 0, top: 100} for scroll, or {key: 'Escape'} for press_key)."
+          }
+        },
+        required: ["selector", "action"]
+      }
+    },
+    {
+      name: "analyze_css_coverage",
+      description: "Scan all active stylesheets on the page and match their selectors against the current DOM to identify unused styles and dead CSS rules."
+    },
+    {
+      name: "analyze_js_dependencies",
+      description: "Audit JavaScript bundles loaded on the page. Fetches and parses source maps where publicly deployed to extract module sizes, and scans code signatures for heavy/legacy libraries (Lodash, Moment, jQuery)."
     }
   ];
+
 
   const interactionTools = [
     {
@@ -415,22 +450,26 @@ Your task is to perform a highly comprehensive and thorough audit of a productio
 
 Guidelines:
 1. COMPREHENSIVENESS REQUIREMENT: You must be extremely thorough. Analyze the entire DOM structure and console logs from top to bottom. Do not limit your report to a few items or stop early. If a page has 10 potential areas of improvement, you should list all 10 opportunities in your report. Do not hold back or summarize.
-2. Inspect the page DOM structure or target element to identify potential legacy web patterns, and then use semantic search (search_use_cases) or list_use_cases to discover matching guidelines.
-3. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-4. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
+2. EFFICIENT GATHERING (TURN 1): In your very first turn, you MUST call get_page_dom, get_console_logs, get_lcp_element, get_viewport_images, and list_use_cases in parallel. This ensures you start with a complete picture of the page's structure and the full catalog of available guidelines to check against.
+3. SMART MATCHING (TURN 2): After receiving Turn 1 diagnostics, compare them against the use cases list, identify all potential matches, and call get_guide_content in parallel only for the guidelines that are relevant. Do not blindly load guide contents for irrelevant use cases to avoid token bloat.
+4. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
+5. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
    - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
    - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
    - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
    - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
-5. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
+6. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
    - The element or file targeted.
    - The specific issue (e.g. "Uses custom JS scroll listener for scrollbar adjustments").
    - The MWG guide ID matches.
    - The modern recommended solution (e.g. "Use scrollbar-color CSS property").
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-6. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
-7. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
+   - Keep the originalCode and modernizedCode snippets highly focused and concise, showing only the immediate target element and its immediate child/sibling nodes needed to demonstrate the fix. Do not include large unchanged parent wrappers or boilerplate wrappers that are not directly related to the refactoring. This keeps the output under output token limits while maintaining fully-realized functional correctness.
+   - If a layout or element modernization requires multiple changes across different files or elements (for example, modifying the HTML structure AND adding/updating CSS styling to keep the layout from breaking), you MUST provide a "changes" array containing each separate change. Each change object in the array must contain "target", "originalCode", and "modernizedCode".
+   - If you do not use the "changes" array, you MUST ensure that the single "originalCode" and "modernizedCode" suggestion is self-contained. For HTML components that require CSS styling to layout correctly, you should include the necessary styles either inline or within a <style> block at the top of the modernized HTML snippet.
+7. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+8. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
 
 Output JSON Format Schema:
 [
@@ -441,8 +480,15 @@ Output JSON Format Schema:
     "guideAnchor": "Optional markdown heading anchor on GitHub (e.g., '1-content-navigability-and-structure' or 'dos') to deep-link to the exact section in the guide. Do not include the '#' symbol.",
     "description": "Explanatory text showing why this is an issue and how the modern API solves it.",
     "target": "CSS Selector of the target DOM element, 'document' for page-wide audits, or 'Network' for HTTP headers, network, or cookie-related recommendations.",
-    "originalCode": "Original/legacy HTML/CSS/JS snippet",
-    "modernizedCode": "Modernized implementation snippet"
+    "originalCode": "Original/legacy HTML/CSS/JS snippet (for the primary/first change, or a summary)",
+    "modernizedCode": "Modernized implementation snippet (for the primary/first change, or a summary)",
+    "changes": [
+      {
+        "target": "CSS Selector of target DOM element, 'document', or file path for this specific change.",
+        "originalCode": "Original/legacy HTML/CSS/JS snippet for this specific change.",
+        "modernizedCode": "Modernized implementation snippet for this specific change."
+      }
+    ]
   }
 ]
 `;
@@ -454,26 +500,26 @@ You must learn the best practices and recommendations from the guidelines first,
 
 Guidelines:
 1. COMPREHENSIVENESS REQUIREMENT: You must be extremely thorough. Check all elements on the page against all relevant guidelines in this category and standard foundational practices. Do not limit your report to a few items or stop early. List all identified opportunities in your report.
-2. First, call list_use_cases with the specified category (or categories) to discover all available use case IDs in that focus area.
-3. You MUST call get_guide_content for the relevant use cases to retrieve and read their full guide content. Learn the modern recommended patterns, requirements, and fallback options. Do NOT proceed to the DOM until you have loaded the guide content.
-4. Retrieve the simplified page DOM using get_page_dom.
-5. Audit the DOM specifically to check if the page's elements and structures adhere to the lessons and patterns from the loaded guides, as well as general foundational best practices for this focus area.
-6. If the DOM fails to conform, or if there is a clear opportunity to apply the modern standard recommendation or standard foundational practice, list it in your report.
-7. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-8. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
+2. EFFICIENT GATHERING (TURN 1): In your very first turn, you MUST call get_page_dom, get_console_logs, get_lcp_element, get_viewport_images, and list_use_cases in parallel. This ensures you start with a complete picture of the page's structure and the full catalog of available guidelines to check against.
+3. SMART MATCHING (TURN 2): After receiving Turn 1 diagnostics, compare them against the use cases list, identify all potential matches, and call get_guide_content in parallel only for the guidelines that are relevant. Do not blindly load guide contents for irrelevant use cases to avoid token bloat.
+4. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
+5. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
    - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
    - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
    - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
    - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
-9. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
+6. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
    - The element or file targeted.
    - The specific issue.
    - The MWG guide ID matches.
    - The modern recommended solution.
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-10. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
-11. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
+   - Keep the originalCode and modernizedCode snippets highly focused and concise, showing only the immediate target element and its immediate child/sibling nodes needed to demonstrate the fix. Do not include large unchanged parent wrappers or boilerplate wrappers that are not directly related to the refactoring. This keeps the output under output token limits while maintaining fully-realized functional correctness.
+   - If a layout or element modernization requires multiple changes across different files or elements (for example, modifying the HTML structure AND adding/updating CSS styling to keep the layout from breaking), you MUST provide a "changes" array containing each separate change. Each change object in the array must contain "target", "originalCode", and "modernizedCode".
+   - If you do not use the "changes" array, you MUST ensure that the single "originalCode" and "modernizedCode" suggestion is self-contained. For HTML components that require CSS styling to layout correctly, you should include the necessary styles either inline or within a <style> block at the top of the modernized HTML snippet.
+7. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
+8. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
 
 Output JSON Format Schema:
 [
@@ -484,8 +530,15 @@ Output JSON Format Schema:
     "guideAnchor": "Optional markdown heading anchor on GitHub (e.g., '1-content-navigability-and-structure' or 'dos') to deep-link to the exact section in the guide. Do not include the '#' symbol.",
     "description": "Explanatory text showing why this is an issue and how the modern API solves it.",
     "target": "CSS Selector of the target DOM element, 'document' for page-wide audits, or 'Network' for HTTP headers, network, or cookie-related recommendations.",
-    "originalCode": "Original/legacy HTML/CSS/JS snippet",
-    "modernizedCode": "Modernized implementation snippet"
+    "originalCode": "Original/legacy HTML/CSS/JS snippet (for the primary/first change, or a summary)",
+    "modernizedCode": "Modernized implementation snippet (for the primary/first change, or a summary)",
+    "changes": [
+      {
+        "target": "CSS Selector of target DOM element, 'document', or file path for this specific change.",
+        "originalCode": "Original/legacy HTML/CSS/JS snippet for this specific change.",
+        "modernizedCode": "Modernized implementation snippet for this specific change."
+      }
+    ]
   }
 ]
 `;
@@ -512,6 +565,8 @@ Guidelines:
    - The modern recommended solution.
    - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
    - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
+   - If a layout or element modernization requires multiple changes across different files or elements (for example, modifying the HTML structure AND adding/updating CSS styling to keep the layout from breaking), you MUST provide a "changes" array containing each separate change. Each change object in the array must contain "target", "originalCode", and "modernizedCode".
+   - If you do not use the "changes" array, you MUST ensure that the single "originalCode" and "modernizedCode" suggestion is self-contained. For HTML components that require CSS styling to layout correctly, you should include the necessary styles either inline or within a <style> block at the top of the modernized HTML snippet.
 8. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
 
 Output JSON Format Schema:
@@ -523,8 +578,15 @@ Output JSON Format Schema:
     "guideAnchor": "Optional markdown heading anchor on GitHub (e.g., '1-content-navigability-and-structure' or 'dos') to deep-link to the exact section in the guide. Do not include the '#' symbol.",
     "description": "Explanatory text showing why this is an issue and how the modern API solves it.",
     "target": "CSS Selector of the target DOM element, 'document' for page-wide audits, or 'Network' for HTTP headers, network, or cookie-related recommendations.",
-    "originalCode": "Original/legacy HTML/CSS/JS snippet",
-    "modernizedCode": "Modernized implementation snippet"
+    "originalCode": "Original/legacy HTML/CSS/JS snippet (for the primary/first change, or a summary)",
+    "modernizedCode": "Modernized implementation snippet (for the primary/first change, or a summary)",
+    "changes": [
+      {
+        "target": "CSS Selector of target DOM element, 'document', or file path for this specific change.",
+        "originalCode": "Original/legacy HTML/CSS/JS snippet for this specific change.",
+        "modernizedCode": "Modernized implementation snippet for this specific change."
+      }
+    ]
   }
 ]
 `;
@@ -549,15 +611,6 @@ CRITICAL - CONTEXT AWARENESS:
 You are running directly inside a Chrome DevTools Side Panel. You have full access to inspect the user's current webpage.
 - If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom, get_inspected_element, get_lcp_element, or get_viewport_images to retrieve the context of the user's page.
 - Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
-
-INTERNAL MONOLOGUE & PLANS:
-- At the start of EVERY turn (including the final response turn where you do not call any tools), you MUST always wrap your internal monologue, reasoning, or plan in \`<thought>\` and \`</thought>\` tags (e.g. \`<thought>I need to inspect the active page DOM to see how the testimonials structure is built and if there's any custom slide navigation script. Let's call get_page_dom.</thought>\`).
-- This is critical because the user inspects your thought process to understand *why* you are calling specific tools and what your strategy is. If you do not wrap this explanation in these tags, it will flash in the main chat response area instead of being formatted in the thought log history.
-- In your final response turn, immediately after closing the \`</thought>\` tag, you MUST output the separator \`===RESPONSE===\` on a line by itself before writing your actual user-facing response. For example:
-  <thought>I have checked the active page DOM. I will formulate the response now.</thought>
-  ===RESPONSE===
-  Here is the modernized implementation for your navigation menu...
-- This separator is critical to help our parser cleanly split your internal thinking from your user-facing output. NEVER omit this separator in your final response turn, and NEVER write user-facing message content before it.
 
 PROACTIVE OVERRIDES, PREVIEWS & SUGGESTIONS:
 - Whenever you recommend a code change or modernization solution for the user's page (e.g. replacing a legacy menu, adding a skip link, styling scrollbars), you MUST be proactive and offer options to the user as clickable suggestion buttons:
@@ -643,6 +696,7 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
       },
       generationConfig: {
         responseMimeType: "application/json",
+        maxOutputTokens: 8192,
         responseSchema: responseSchema || {
           type: "ARRAY",
           items: {
@@ -658,7 +712,19 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
               description: { type: "STRING" },
               target: { type: "STRING" },
               originalCode: { type: "STRING" },
-              modernizedCode: { type: "STRING" }
+              modernizedCode: { type: "STRING" },
+              changes: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    target: { type: "STRING" },
+                    originalCode: { type: "STRING" },
+                    modernizedCode: { type: "STRING" }
+                  },
+                  required: ["originalCode", "modernizedCode"]
+                }
+              }
             },
             required: ["title", "impact", "description", "target", "originalCode", "modernizedCode"]
           }
@@ -863,6 +929,18 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
           } else if (name === "get_viewport_images") {
             toolResult = await getViewportImages();
             appendLog(loggerId, `Tool output: Retrieved ${toolResult.length} images inside the viewport.`, "tool");
+          } else if (name === "get_network_requests") {
+            toolResult = await getNetworkRequests();
+            appendLog(loggerId, `Tool output: Captured ${toolResult.length} network requests.`, "tool");
+          } else if (name === "simulate_and_measure_inp") {
+            toolResult = await simulateAndMeasureInp(args.selector, args.action, args.payload);
+            appendLog(loggerId, `Tool output: Simulated "${args.action}" on "${args.selector}" and measured interaction metrics.`, "tool");
+          } else if (name === "analyze_css_coverage") {
+            toolResult = await analyzeCssCoverage();
+            appendLog(loggerId, `Tool output: Audited CSS stylesheet usage (rules: ${toolResult.totalRules}, unused: ${toolResult.totalUnused}).`, "tool");
+          } else if (name === "analyze_js_dependencies") {
+            toolResult = await analyzeJsDependencies();
+            appendLog(loggerId, `Tool output: Audited JS bundle dependencies (scripts: ${toolResult.scriptsAudited?.length}).`, "tool");
           } else {
             throw new Error(`Unknown function call: ${name}`);
           }
@@ -952,10 +1030,9 @@ function getAdaptivePacingDelay(history, loopCount) {
     return sum + (r.actualTokens || r.estimatedTokens);
   }, 0);
   
-  // Dynamic limits based on plan tier config
-  const isPayAsYouGo = config.apiTier === "pay-as-you-go";
-  const MAX_RPM = isPayAsYouGo ? 360 : 15;
-  const MAX_TPM = isPayAsYouGo ? 4000000 : 1000000;
+  // Standard free tier limits (15 RPM / 1M TPM)
+  const MAX_RPM = 15;
+  const MAX_TPM = 1000000;
   
   let delay = 0;
   
@@ -1065,6 +1142,7 @@ async function generateEarlyReport(url, history, baseSystemInstruction, response
     },
     generationConfig: {
       responseMimeType: "application/json",
+      maxOutputTokens: 8192,
       responseSchema: responseSchema
     }
   };
@@ -1118,10 +1196,28 @@ function appendLog(loggerId, message, sender = "system") {
 }
 
 // Dino Chat API functions
+const STOCK_GREETINGS = [
+  "Rawr! Dino here! I've risen from the fossils to help you build some Cretaceous-cool sites! What modern web magic are we hatching today?",
+  "Rawr! 🦖 Dino here, ready to stomp out legacy code! Let's modernise your prehistoric pages into something spectacular. What are we auditing today?",
+  "Greetings, human! Dino here, your Cretaceous companion for all things CSS, JS, and HTML. Let's make sure your site doesn't go extinct! Where shall we begin?",
+  "Rawr! Rex here to help! 🦖 Don't let your code become a fossil. Let's dig up some modernization opportunities and make your web apps run at raptor speed!",
+  "Hey there! Dino here, fresh out of the Mesozoic era. Ready to trade that slow, legacy layout for some modern web magic? Ask me anything?",
+  "Rawr! 🦖 Dino here! Risen from the deep layers of time to debug the modern web. Let's make your code smooth, fast, and completely meteor-proof!"
+];
+
+function getRandomStockGreeting() {
+  const index = Math.floor(Math.random() * STOCK_GREETINGS.length);
+  return appendAuditSuggestions(STOCK_GREETINGS[index]);
+}
+
 async function runDinoGreeting() {
   if (!config.apiKey) {
     return "Rawr! Dino here! Set up your Gemini API Key in Settings to get started, and I'll help you modernise your prehistoric web apps!";
   }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
   const systemPrompt = `You are Dino, a sassy and pun-loving Modern Web development assistant.
 Your job is to provide a short, snappy, and high-energy initial greeting for a new chat session.
@@ -1137,19 +1233,26 @@ STRICT RULES:
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         contents: [{ parts: [{ text: "Give me a fresh, punny Dino greeting where you introduce yourself." }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] }
       })
     });
+    clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const greeting = text.trim().replace(/^"/, '').replace(/"$/, '');
     return appendAuditSuggestions(greeting);
   } catch (err) {
-    console.warn("Failed to generate Dino greeting dynamically:", err);
-    return appendAuditSuggestions("Rawr! I'm Dino. I've risen from the fossils to help you build modern web apps. What can I help you with today?");
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      console.warn("Dino greeting API call timed out after 3 seconds, using stock greeting.");
+    } else {
+      console.warn("Failed to generate Dino greeting dynamically:", err);
+    }
+    return getRandomStockGreeting();
   }
 }
 
@@ -1233,7 +1336,16 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
     if (supportsThinking(config.model)) {
       customSystemInstruction += "\n\n- NATIVE THINKING CONFIGURATION ENABLED: Do NOT output manual `<thought>` or `===RESPONSE===` tags in your text response. Your internal planning/monologue is handled automatically by the API's thinking configuration. Write only your final user-facing markdown response.";
     } else {
-      customSystemInstruction += "\n\n- INTERNAL MONOLOGUE & PLANS: At the start of your turn, wrap your internal planning monologue in `<thought>` and `</thought>` tags. Immediately after the closing tag, write the separator `===RESPONSE===` on a line by itself before writing your response.";
+      customSystemInstruction += `
+
+- INTERNAL MONOLOGUE & PLANS:
+  - At the start of EVERY turn (including the final response turn where you do not call any tools), you MUST always wrap your internal monologue, reasoning, or plan in \`<thought>\` and \`</thought>\` tags (e.g. \`<thought>I need to inspect the active page DOM to see how the testimonials structure is built and if there's any custom slide navigation script. Let's call get_page_dom.</thought>\`).
+  - This is critical because the user inspects your thought process to understand *why* you are calling specific tools and what your strategy is. If you do not wrap this explanation in these tags, it will flash in the main chat response area instead of being formatted in the thought log history.
+  - In your final response turn, immediately after closing the \`</thought>\` tag, you MUST output the separator \`===RESPONSE===\` on a line by itself before writing your actual user-facing response. For example:
+    <thought>I have checked the active page DOM. I will formulate the response now.</thought>
+    ===RESPONSE===
+    Here is the modernized implementation for your navigation menu...
+  - This separator is critical to help our parser cleanly split your internal thinking from your user-facing output. NEVER omit this separator in your final response turn, and NEVER write user-facing message content before it.`;
     }
 
     const requestBody = {
@@ -1477,6 +1589,10 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
         else if (name === "analyze_layout_metrics") statusMsg = `Analyzing layout metrics for "${args.selector}"...`;
         else if (name === "get_lcp_element") statusMsg = "Retrieving Largest Contentful Paint (LCP) element...";
         else if (name === "get_viewport_images") statusMsg = "Retrieving all images in the viewport...";
+        else if (name === "get_network_requests") statusMsg = "Auditing network request logs...";
+        else if (name === "simulate_and_measure_inp") statusMsg = `Simulating "${args.action}" on "${args.selector}" to measure INP/LoAF...`;
+        else if (name === "analyze_css_coverage") statusMsg = "Analyzing dead CSS rules & coverage...";
+        else if (name === "analyze_js_dependencies") statusMsg = "Analyzing JS bundle source maps & dependency weights...";
 
         const currentStep = {
           type: 'tool',
@@ -1540,6 +1656,14 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
             toolResult = await getLcpElement();
           } else if (name === "get_viewport_images") {
             toolResult = await getViewportImages();
+          } else if (name === "get_network_requests") {
+            toolResult = await getNetworkRequests();
+          } else if (name === "simulate_and_measure_inp") {
+            toolResult = await simulateAndMeasureInp(args.selector, args.action, args.payload);
+          } else if (name === "analyze_css_coverage") {
+            toolResult = await analyzeCssCoverage();
+          } else if (name === "analyze_js_dependencies") {
+            toolResult = await analyzeJsDependencies();
           } else if (name === "apply_preview") {
             toolResult = await applyPreview({
               target: args.selector,

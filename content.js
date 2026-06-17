@@ -42,4 +42,33 @@
       originalConsole[type].apply(console, args);
     };
   });
+
+  // Buffers for INP-Raptor interaction timing and Long Animation Frames (LoAF)
+  window.__mwg_loaf_entries = [];
+  window.__mwg_event_entries = [];
+
+  try {
+    const loafObserver = new PerformanceObserver((list) => {
+      window.__mwg_loaf_entries.push(...list.getEntries());
+      if (window.__mwg_loaf_entries.length > 100) {
+        window.__mwg_loaf_entries = window.__mwg_loaf_entries.slice(-100);
+      }
+    });
+    loafObserver.observe({ type: 'long-animation-frame', buffered: true });
+  } catch (e) {
+    // LoAF not supported or disabled in this browser
+  }
+
+  try {
+    const eventObserver = new PerformanceObserver((list) => {
+      window.__mwg_event_entries.push(...list.getEntries());
+      if (window.__mwg_event_entries.length > 100) {
+        window.__mwg_event_entries = window.__mwg_event_entries.slice(-100);
+      }
+    });
+    eventObserver.observe({ type: 'event', buffered: true });
+  } catch (e) {
+    // Event Timing API not supported
+  }
 })();
+
