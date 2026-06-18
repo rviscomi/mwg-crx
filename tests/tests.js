@@ -134,4 +134,14 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-document.addEventListener("DOMContentLoaded", runTests);
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { testSuite };
+} else if (typeof globalThis !== 'undefined') {
+  globalThis.testSuite = testSuite;
+}
+
+// Only run automatically in browser environments
+if (typeof document !== 'undefined') {
+  document.addEventListener("DOMContentLoaded", runTests);
+}
+

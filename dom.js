@@ -187,34 +187,56 @@ function getInspectedElement() {
   return new Promise((resolve, reject) => {
     chrome.devtools.inspectedWindow.eval(
       `(() => {
-        const el = $0;
-        if (!el) return null;
-        return {
-          outerHTML: el.outerHTML,
-          tagName: el.tagName.toLowerCase(),
-          id: el.id,
-          class: el.className,
-          computedStyle: {
-            display: window.getComputedStyle(el).display,
-            position: window.getComputedStyle(el).position,
-            overflow: window.getComputedStyle(el).overflow,
-            scrollbarColor: window.getComputedStyle(el).scrollbarColor,
-            scrollbarWidth: window.getComputedStyle(el).scrollbarWidth
-          }
-        };
+        try {
+          const el = $0;
+          if (!el || el.nodeType !== 1) return null;
+          return {
+            outerHTML: el.outerHTML || "",
+            tagName: el.tagName ? el.tagName.toLowerCase() : "",
+            id: el.id || "",
+            class: el.className || "",
+            computedStyle: {
+              display: (window.getComputedStyle(el) || {}).display || "",
+              position: (window.getComputedStyle(el) || {}).position || "",
+              overflow: (window.getComputedStyle(el) || {}).overflow || "",
+              scrollbarColor: (window.getComputedStyle(el) || {}).scrollbarColor || "",
+              scrollbarWidth: (window.getComputedStyle(el) || {}).scrollbarWidth || ""
+            }
+          };
+        } catch (e) {
+          return { error: e.message };
+        }
       })()`,
-      (result, isException) => {
-        if (isException) reject(new Error("Failed to evaluate inspected element"));
-        else resolve(result);
+      (result, exceptionInfo) => {
+        if (exceptionInfo && (exceptionInfo.isException || exceptionInfo.value)) {
+          const errMsg = exceptionInfo.value || exceptionInfo.description || "Unknown DevTools eval exception";
+          reject(new Error(`Failed to evaluate inspected element: ${errMsg}`));
+        } else if (result && result.error) {
+          reject(new Error(`Failed to evaluate inspected element: ${result.error}`));
+        } else {
+          resolve(result);
+        }
       }
     );
   });
 }
 
 function executeJS(code) {
+  // To avoid SyntaxErrors when declaring block-scoped variables (const/let) repeatedly,
+  // we wrap the code block in curly braces if it contains const/let declarations
+  // and is not already wrapped in block braces or IIFE parenthesis.
+  let cleanCode = code.trim();
+  if (
+    (cleanCode.includes("const ") || cleanCode.includes("let ")) &&
+    !cleanCode.startsWith("{") &&
+    !cleanCode.startsWith("(")
+  ) {
+    cleanCode = `{\n${code}\n}`;
+  }
+
   return new Promise((resolve) => {
     chrome.devtools.inspectedWindow.eval(
-      code,
+      cleanCode,
       (result, isException) => {
         if (isException) {
           resolve({
@@ -273,25 +295,35 @@ function getInspectedElementBySelector(selector) {
   return new Promise((resolve, reject) => {
     chrome.devtools.inspectedWindow.eval(
       `(() => {
-        const el = document.querySelector(${JSON.stringify(selector)});
-        if (!el) return null;
-        return {
-          outerHTML: el.outerHTML,
-          tagName: el.tagName.toLowerCase(),
-          id: el.id,
-          class: el.className,
-          computedStyle: {
-            display: window.getComputedStyle(el).display,
-            position: window.getComputedStyle(el).position,
-            overflow: window.getComputedStyle(el).overflow,
-            scrollbarColor: window.getComputedStyle(el).scrollbarColor,
-            scrollbarWidth: window.getComputedStyle(el).scrollbarWidth
-          }
-        };
+        try {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (!el || el.nodeType !== 1) return null;
+          return {
+            outerHTML: el.outerHTML || "",
+            tagName: el.tagName ? el.tagName.toLowerCase() : "",
+            id: el.id || "",
+            class: el.className || "",
+            computedStyle: {
+              display: (window.getComputedStyle(el) || {}).display || "",
+              position: (window.getComputedStyle(el) || {}).position || "",
+              overflow: (window.getComputedStyle(el) || {}).overflow || "",
+              scrollbarColor: (window.getComputedStyle(el) || {}).scrollbarColor || "",
+              scrollbarWidth: (window.getComputedStyle(el) || {}).scrollbarWidth || ""
+            }
+          };
+        } catch (e) {
+          return { error: e.message };
+        }
       })()`,
-      (result, isException) => {
-        if (isException) reject(new Error("Failed to evaluate inspected element by selector"));
-        else resolve(result);
+      (result, exceptionInfo) => {
+        if (exceptionInfo && (exceptionInfo.isException || exceptionInfo.value)) {
+          const errMsg = exceptionInfo.value || exceptionInfo.description || "Unknown DevTools eval exception";
+          reject(new Error(`Failed to evaluate inspected element by selector: ${errMsg}`));
+        } else if (result && result.error) {
+          reject(new Error(`Failed to evaluate inspected element by selector: ${result.error}`));
+        } else {
+          resolve(result);
+        }
       }
     );
   });
@@ -497,6 +529,40 @@ async function getElementInfo(selector, computedProperties = []) {
         for (const attr of el.attributes) {
           attrs[attr.name] = attr.value;
         }
+
+        const matchedCSSRules = [];
+        try {
+          for (let i = 0; i < document.styleSheets.length; i++) {
+            const sheet = document.styleSheets[i];
+            let rules = null;
+            try {
+              rules = sheet.cssRules || sheet.rules;
+            } catch (e) {
+              continue;
+            }
+            if (!rules) continue;
+            const href = sheet.href || "inline";
+            for (let j = 0; j < rules.length; j++) {
+              const rule = rules[j];
+              if (rule.type === CSSRule.STYLE_RULE && rule.selectorText) {
+                try {
+                  if (el.matches(rule.selectorText)) {
+                    matchedCSSRules.push({
+                      selector: rule.selectorText,
+                      cssText: rule.style.cssText,
+                      href: href
+                    });
+                  }
+                } catch (e) {
+                  // Ignore invalid selector syntax in stylesheet
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore style sheets errors
+        }
+
         return {
           tagName: el.tagName.toLowerCase(),
           id: el.id,
@@ -505,6 +571,7 @@ async function getElementInfo(selector, computedProperties = []) {
           outerHTML: el.outerHTML.substring(0, 3000), // Cap size slightly lower for list matches
           innerText: el.innerText.substring(0, 1000),
           computedStyle: computed,
+          matchedCSSRules: matchedCSSRules.slice(0, 15),
           geometry: {
             scrollLeft: el.scrollLeft,
             scrollTop: el.scrollTop,
@@ -1130,9 +1197,15 @@ if (typeof chrome !== "undefined" && chrome.devtools && chrome.devtools.network)
       const url = request.request.url || "";
       const truncatedUrl = url.length > 512 ? url.substring(0, 512) + "... [truncated]" : url;
       
-      const essentialHeaders = ['content-encoding', 'content-type', 'cache-control', 'alt-svc', 'content-length', 'server'];
+      const mimeType = (request.response.content && request.response.content.mimeType) || "";
+      const isHtml = mimeType.toLowerCase().includes("html") || (request._resourceType === "document");
+
+      const essentialHeaders = [
+        'content-encoding', 'content-type', 'cache-control', 'alt-svc', 
+        'content-length', 'server', 'link', 'location', 'speculation-rules'
+      ];
       const respHeaders = (request.response.headers || [])
-        .filter(h => essentialHeaders.includes(h.name.toLowerCase()))
+        .filter(h => isHtml || essentialHeaders.includes(h.name.toLowerCase()))
         .map(h => ({ name: h.name, value: h.value }));
 
       const entry = {
@@ -1676,5 +1749,74 @@ async function checkBfcacheReasons() {
   });
 
   return result[0].result;
+}
+
+/**
+ * Retrieves the response headers of the base HTML document.
+ */
+async function getDocumentHeaders() {
+  // 1. Get the current page URL
+  const pageUrl = await new Promise((resolve) => {
+    chrome.devtools.inspectedWindow.eval("window.location.href", (result, isException) => {
+      if (isException || !result) {
+        resolve(null);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+
+  if (!pageUrl) {
+    throw new Error("Could not retrieve current page URL.");
+  }
+
+  const cleanUrl = (url) => url.split('#')[0].replace(/\/$/, "");
+  const targetCleanUrl = cleanUrl(pageUrl);
+
+  // 2. Try to find the document request in the buffer
+  const matchedRequest = networkRequestsBuffer.find(req => {
+    const reqCleanUrl = cleanUrl(req.url);
+    return reqCleanUrl === targetCleanUrl && req.mimeType.includes("html");
+  });
+
+  if (matchedRequest) {
+    return {
+      url: matchedRequest.url,
+      status: matchedRequest.status,
+      httpVersion: matchedRequest.httpVersion,
+      headers: matchedRequest.responseHeaders,
+      redirected: false
+    };
+  }
+
+  // 3. Fallback: fetch the URL to get the headers
+  try {
+    const controller = new AbortController();
+    const response = await fetch(pageUrl, {
+      signal: controller.signal,
+      credentials: 'include'
+    });
+    
+    // Extract headers
+    const headers = [];
+    for (const [name, value] of response.headers.entries()) {
+      headers.push({ name, value });
+    }
+    
+    // Abort the body read to save bandwidth
+    controller.abort();
+
+    return {
+      url: response.url,
+      status: response.status,
+      httpVersion: "", // fetch doesn't expose HTTP version
+      headers: headers,
+      redirected: response.redirected
+    };
+  } catch (err) {
+    return {
+      error: `Failed to retrieve headers: ${err.message}`
+    };
+  }
 }
 

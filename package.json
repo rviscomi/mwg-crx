@@ -1,0 +1,11 @@
+{
+  "name": "mwg-crx",
+  "version": "1.0.0",
+  "description": "Modern Web Guidance Chrome Extension",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}

@@ -741,14 +741,16 @@ body {
   color: var(--text-muted);
 }
 
-.target-link-btn {
+.target-link-btn,
+.source-link-btn {
   color: #38bdf8; /* Sleek DevTools blue */
   text-decoration: none;
   cursor: pointer;
   transition: color 0.2s ease;
 }
 
-.target-link-btn:hover {
+.target-link-btn:hover,
+.source-link-btn:hover {
   text-decoration: underline;
   color: var(--accent-hover);
 }
@@ -1084,7 +1086,7 @@ body {
 }
 
 /* Links */
-.message-bubble a {
+.message-bubble a:not(.chat-suggest-btn) {
   color: #38bdf8;
   text-decoration: none;
   border-bottom: 1px dashed rgba(56, 189, 248, 0.3);

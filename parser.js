@@ -99,3 +99,10 @@ function parseThoughtAndContent(text) {
 
   return { thoughts, response };
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { parseThoughtAndContent };
+} else if (typeof globalThis !== 'undefined') {
+  globalThis.parseThoughtAndContent = parseThoughtAndContent;
+}
+

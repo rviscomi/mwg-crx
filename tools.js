@@ -33,54 +33,6 @@ class Tool {
 }
 
 const toolRegistry = {
-  update_audit_checklist: new Tool({
-    capability: "core",
-    declaration: {
-      name: "update_audit_checklist",
-      description: "Update the checklist of audit tasks to keep the user informed. At the start of the audit, you MUST construct the list of tasks you plan to perform, setting their status to 'pending' or 'running'. As you proceed and finish tasks, you MUST call this tool to update their status to 'completed', 'failed', or update details. You can also append new tasks if your plan changes.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          tasks: {
-            type: "ARRAY",
-            description: "The list of tasks in the checklist. Tasks are rendered in the order provided.",
-            items: {
-              type: "OBJECT",
-              properties: {
-                id: {
-                  type: "STRING",
-                  description: "A unique ID for the task (e.g., 'gather-pages', 'check-accessibility', 'check-performance')."
-                },
-                title: {
-                  type: "STRING",
-                  description: "A short, user-friendly title of the task."
-                },
-                status: {
-                  type: "STRING",
-                  enum: ["pending", "running", "completed", "failed"],
-                  description: "The current status of this task."
-                },
-                details: {
-                  type: "STRING",
-                  description: "Optional short description of findings or progress for this task."
-                }
-              },
-              required: ["id", "title", "status"]
-            }
-          }
-        },
-        required: ["tasks"]
-      }
-    },
-    execute: async (args) => {
-      if (typeof updateChecklistUI === "function") {
-        updateChecklistUI(args.tasks);
-      }
-      return { success: true, tasksUpdated: args.tasks.length };
-    },
-    getLogMessage: (args) => `Updated audit checklist with ${args.tasks?.length || 0} tasks.`
-  }),
-
   list_use_cases: new Tool({
     capability: "core",
     declaration: {
@@ -181,13 +133,17 @@ const toolRegistry = {
           code: {
             type: "STRING",
             description: "The JavaScript code to execute. Can be a single expression or an IIFE. The code MUST only return compact, concise data structures (e.g. counts, statistics, or explicitly sliced sub-arrays) rather than raw DOM nodes or large text blobs."
+          },
+          purpose: {
+            type: "STRING",
+            description: "A short, user-friendly description of what this script is auditing or checking (e.g. 'Checking if any heavy scripts like jQuery or React are loaded on the page')."
           }
         },
-        required: ["code"]
+        required: ["code", "purpose"]
       }
     },
     execute: async (args) => await executeJS(args.code),
-    getLogMessage: (args, toolResult) => `Executed JS script on page. Success: ${toolResult.success}`
+    getLogMessage: (args, toolResult) => `Executed JS: "${args.purpose}". Success: ${toolResult.success}`
   }),
 
   get_inspected_element: new Tool({
@@ -204,7 +160,7 @@ const toolRegistry = {
     capability: "core",
     declaration: {
       name: "get_element_info",
-      description: "Retrieve detailed information about one or more DOM elements matching the selector or selector list (using querySelectorAll), including their tag name, attributes, outerHTML, innerText, and computed styles. Use comma-separated selector lists to query details for multiple elements in a single tool call to save tokens and minimize roundtrips.",
+      description: "Retrieve detailed information about one or more DOM elements matching the selector or selector list (using querySelectorAll), including their tag name, attributes, outerHTML, innerText, computed styles, and matched CSS rules (with their CSS selector text, styles, and stylesheet file URLs). Use comma-separated selector lists to query details for multiple elements in a single tool call to save tokens and minimize roundtrips.",
       parameters: {
         type: "OBJECT",
         properties: {
@@ -294,6 +250,21 @@ const toolRegistry = {
     getLogMessage: (args, toolResult) => `Captured ${toolResult?.length || 0} network requests.`
   }),
 
+  get_document_headers: new Tool({
+    capability: "core",
+    declaration: {
+      name: "get_document_headers",
+      description: "Retrieve the HTTP/HTTPS response headers of the base HTML document. It automatically follows any redirect chain to return the final document's headers, and preserves all headers (unlike get_network_requests which filters them). Use this to audit HTTP headers such as Speculation-Rules, Link, Content-Security-Policy (CSP), Strict-Transport-Security, and redirects."
+    },
+    execute: async () => await getDocumentHeaders(),
+    getLogMessage: (args, toolResult) => {
+      if (toolResult && toolResult.error) {
+        return `Failed to retrieve document headers: ${toolResult.error}`;
+      }
+      return `Retrieved document headers. Status: ${toolResult?.status || 'unknown'}${toolResult?.redirected ? ' (redirected)' : ''}`;
+    }
+  }),
+
   simulate_and_measure_inp: new Tool({
     capability: "core",
     declaration: {
@@ -352,125 +323,6 @@ const toolRegistry = {
     getLogMessage: () => "Checked bfcache reasons."
   }),
 
-  click_element: new Tool({
-    capability: "interaction",
-    declaration: {
-      name: "click_element",
-      description: "Simulate a click event on a DOM element matching the specified selector (and scrolls it into view). Use this to interact with buttons, toggles, links, etc.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to click."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    execute: async (args) => await clickElement(args.selector),
-    getLogMessage: (args) => `Clicked element matching "${args.selector}".`
-  }),
-
-  type_text: new Tool({
-    capability: "interaction",
-    declaration: {
-      name: "type_text",
-      description: "Simulate typing text into a form input, textarea, or contenteditable element matching the specified selector.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the target element."
-          },
-          text: {
-            type: "STRING",
-            description: "Text to type into the element."
-          }
-        },
-        required: ["selector", "text"]
-      }
-    },
-    execute: async (args) => await typeText(args.selector, args.text),
-    getLogMessage: (args) => `Typed in element matching "${args.selector}".`
-  }),
-
-  hover_element: new Tool({
-    capability: "interaction",
-    declaration: {
-      name: "hover_element",
-      description: "Simulate mouse hover/mouseenter/mouseover events on a DOM element matching the selector. Use this to trigger CSS hover states or JS hover listeners.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to hover."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    execute: async (args) => await hoverElement(args.selector),
-    getLogMessage: (args) => `Hovered element matching "${args.selector}".`
-  }),
-
-  scroll_element: new Tool({
-    capability: "interaction",
-    declaration: {
-      name: "scroll_element",
-      description: "Scrolls a DOM element matching the specified selector to the given left/top offsets. Use this to test scrollable containers, carousels, and scroll-driven behavior.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to scroll."
-          },
-          left: {
-            type: "NUMBER",
-            description: "Horizontal scroll pixel offset."
-          },
-          top: {
-            type: "NUMBER",
-            description: "Vertical scroll pixel offset."
-          },
-          behavior: {
-            type: "STRING",
-            description: "Scroll behavior ('auto' or 'smooth')."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    execute: async (args) => await scrollElement(args.selector, args.left, args.top, args.behavior),
-    getLogMessage: (args) => `Scrolled element matching "${args.selector}".`
-  }),
-
-  press_key: new Tool({
-    capability: "interaction",
-    declaration: {
-      name: "press_key",
-      description: "Simulates pressing a key (like Escape, Enter, ArrowRight, ArrowLeft, Space) on the DOM element matching the selector. Use this to test keyboard accessibility, close dialogs/menus, or navigate carousels/tabs.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the target element (or 'document' for global key events)."
-          },
-          key: {
-            type: "STRING",
-            description: "The name of the key to press (e.g. 'Escape', 'Enter', 'ArrowRight', 'ArrowLeft', 'Space')."
-          }
-        },
-        required: ["selector", "key"]
-      }
-    },
-    execute: async (args) => await pressKey(args.selector, args.key),
-    getLogMessage: (args) => `Pressed key "${args.key}" on element matching "${args.selector}".`
-  }),
 
   simulate_action: new Tool({
     capability: "interaction",

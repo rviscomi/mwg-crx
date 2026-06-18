@@ -237,26 +237,124 @@ function renderDinoResponse(content, container) {
   processed = processed.replace(/\[([^\]]+)\]\((useCaseId:[^)]+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
+  processed = processed.replace(/\[([^\]]+)\]\((source:[^)]+)\)/g, (match, label, url) => {
+    return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
+  });
 
   container.innerHTML = marked.parse(processed);
   
-  // Bind [Inspect: CSS_SELECTOR](inspect:CSS_SELECTOR) links
-  container.querySelectorAll('a[href^="inspect:"]').forEach(link => {
+  // Bind [Label](source:URL?line=LINE) or (source:URL:LINE) links
+  container.querySelectorAll('a[href^="source:"]').forEach(link => {
     const href = link.getAttribute("href");
-    const selector = normalizeSelector(decodeURIComponent(href.substring(8)));
-    link.className = "target-link-btn";
+    const rawUrl = decodeURIComponent(href.substring(7));
+    
+    link.className = "source-link-btn";
     link.removeAttribute("href");
     link.style.cursor = "pointer";
     link.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      inspectPageElement(selector);
+      try {
+        let fileUrl = rawUrl;
+        let lineNum = 0;
+        let colNum = 0;
+        
+        try {
+          const urlObj = new URL(rawUrl);
+          if (urlObj.searchParams.has("line")) {
+            lineNum = parseInt(urlObj.searchParams.get("line"), 10) - 1;
+            if (urlObj.searchParams.has("column")) {
+              colNum = parseInt(urlObj.searchParams.get("column"), 10) - 1;
+            }
+            urlObj.searchParams.delete("line");
+            urlObj.searchParams.delete("column");
+            fileUrl = urlObj.href;
+          } else {
+            const match = rawUrl.match(/:(\d+)(?::(\d+))?$/);
+            if (match) {
+              lineNum = parseInt(match[1], 10) - 1;
+              if (match[2]) {
+                colNum = parseInt(match[2], 10) - 1;
+              }
+              fileUrl = rawUrl.substring(0, match.index);
+            }
+          }
+        } catch (urlErr) {
+          const match = rawUrl.match(/:(\d+)(?::(\d+))?$/);
+          if (match) {
+            lineNum = parseInt(match[1], 10) - 1;
+            if (match[2]) {
+              colNum = parseInt(match[2], 10) - 1;
+            }
+            fileUrl = rawUrl.substring(0, match.index);
+          }
+        }
+
+        if (lineNum < 0) lineNum = 0;
+        if (colNum < 0) colNum = 0;
+
+        if (colNum > 0) {
+          chrome.devtools.panels.openResource(fileUrl, lineNum, colNum, (result) => {
+            if (result && result.status === "error") {
+              showToast(`Could not open source: ${result.message || 'unknown error'}`, "error");
+            }
+          });
+        } else {
+          chrome.devtools.panels.openResource(fileUrl, lineNum, (result) => {
+            if (result && result.status === "error") {
+              showToast(`Could not open source: ${result.message || 'unknown error'}`, "error");
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Dino open source click failed:", err);
+        showToast(`Failed to open source: ${err.message}`, "error");
+      }
+    });
+  });
+
+  // Bind [Inspect: CSS_SELECTOR](inspect:CSS_SELECTOR) links
+  container.querySelectorAll('a[href^="inspect:"]').forEach(link => {
+    const href = link.getAttribute("href");
+    const selector = normalizeSelector(decodeURIComponent(href.substring(8)));
+    
+    // Check if this inspect link is part of a suggestion button group
+    const isButtonGroup = link.parentElement && (
+      link.parentElement.querySelector('a.chat-suggest-btn') ||
+      link.parentElement.querySelector('a[href^="suggest:"]')
+    );
+
+    if (isButtonGroup) {
+      link.className = "chat-suggest-btn";
+    } else {
+      link.className = "target-link-btn";
+    }
+
+    link.removeAttribute("href");
+    link.style.cursor = "pointer";
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        inspectPageElement(selector);
+      } catch (err) {
+        console.error("Dino inspect element click failed:", err);
+        showToast(`Failed to inspect element: ${err.message}`, "error");
+      }
     });
     link.addEventListener("mouseenter", () => {
-      highlightElementOnPage(selector);
+      try {
+        highlightElementOnPage(selector);
+      } catch (err) {
+        console.error("Dino element highlight failed:", err);
+      }
     });
     link.addEventListener("mouseleave", () => {
-      removeHighlightFromPage();
+      try {
+        removeHighlightFromPage();
+      } catch (err) {
+        console.error("Dino remove highlight failed:", err);
+      }
     });
   });
 
@@ -270,10 +368,15 @@ function renderDinoResponse(content, container) {
       e.preventDefault();
       e.stopPropagation();
       
-      const chatInput = document.getElementById("chat-input");
-      if (chatInput) {
-        chatInput.value = suggestionText;
-        handleSendChatMessage();
+      try {
+        const chatInput = document.getElementById("chat-input");
+        if (chatInput) {
+          chatInput.value = suggestionText;
+          handleSendChatMessage();
+        }
+      } catch (err) {
+        console.error("Dino suggestion button click failed:", err);
+        showToast(`Failed to trigger suggestion: ${err.message}`, "error");
       }
     });
   });
@@ -1236,8 +1339,7 @@ function escapeHtmlForChat(str) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replace(/"/g, "&quot;");
 }
 
 function startListening() {

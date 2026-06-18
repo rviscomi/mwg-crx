@@ -4,6 +4,46 @@ let latestReports = {
   audit: null,
   inspect: null
 };
+let activeChecklistTasks = {
+  audit: [],
+  inspect: []
+};
+let activeLoggerId = null;
+
+const AUDIT_PLANS = {
+  full: [
+    { id: "gather-context", title: "Gather page structure & active guides", status: "pending" },
+    { id: "match-guidelines", title: "Identify relevant modernization guidelines", status: "pending" },
+    { id: "audit-layout", title: "Check semantic layout & CSS compatibility", status: "pending" },
+    { id: "audit-accessibility", title: "Verify accessibility & keyboard navigation", status: "pending" },
+    { id: "audit-performance", title: "Analyze performance & Core Web Vitals", status: "pending" },
+    { id: "compile-report", title: "Compiling modernization recommendations", status: "pending" }
+  ],
+  accessibility: [
+    { id: "gather-context", title: "Gather page structure & accessibility tree", status: "pending" },
+    { id: "match-guidelines", title: "Identify relevant accessibility guidelines", status: "pending" },
+    { id: "audit-accessibility", title: "Verify accessibility & keyboard navigation", status: "pending" },
+    { id: "compile-report", title: "Compiling accessibility recommendations", status: "pending" }
+  ],
+  performance: [
+    { id: "gather-context", title: "Gather page structure & network logs", status: "pending" },
+    { id: "match-guidelines", title: "Identify relevant performance guidelines", status: "pending" },
+    { id: "audit-performance", title: "Analyze performance & Core Web Vitals", status: "pending" },
+    { id: "compile-report", title: "Compiling performance recommendations", status: "pending" }
+  ],
+  "security-privacy": [
+    { id: "gather-context", title: "Gather page structure & security headers", status: "pending" },
+    { id: "match-guidelines", title: "Identify relevant security & privacy guidelines", status: "pending" },
+    { id: "audit-security", title: "Check security, privacy & browser headers", status: "pending" },
+    { id: "compile-report", title: "Compiling security & privacy recommendations", status: "pending" }
+  ]
+};
+
+const INSPECT_PLAN = [
+  { id: "inspect-element", title: "Analyze selected element structure & styles", status: "pending" },
+  { id: "match-guidelines", title: "Identify matching design patterns & guidelines", status: "pending" },
+  { id: "formulate-fix", title: "Formulating refactoring code & tips", status: "pending" }
+];
 
 // Main DevTools Panel Controller
 document.addEventListener("DOMContentLoaded", async () => {
@@ -240,6 +280,7 @@ async function runAudit() {
   logger.querySelector(".logger-status-text").textContent = "Running analysis...";
   
   // Clear checklist
+  activeChecklistTasks.audit = [];
   const checklistEl = document.getElementById("audit-checklist");
   if (checklistEl) {
     checklistEl.classList.add("hidden");
@@ -251,20 +292,26 @@ async function runAudit() {
   latestReports.audit = null;
 
   const focus = document.getElementById("audit-type").value;
+
+  // Pre-populate checklist instantly
+  activeChecklistTasks.audit = JSON.parse(JSON.stringify(AUDIT_PLANS[focus] || AUDIT_PLANS.full));
+  activeLoggerId = "audit";
+  updateChecklistUI();
+
   let focusConstraint = "";
   let focusInstructions = "";
 
   if (focus === "full") {
-    focusInstructions = "\n- You MUST perform a Full Page Audit. In your first turn, call update_audit_checklist to declare your plan, and call list_use_cases, get_page_dom, get_accessibility_tree, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+    focusInstructions = "\n- You MUST perform a Full Page Audit. In your first turn, call list_use_cases, get_page_dom, get_accessibility_tree, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   } else if (focus === "accessibility") {
     focusConstraint = "\nCategory constraint: 'accessibility'";
-    focusInstructions = "\n- You MUST perform a targeted Accessibility Audit. Since accessibility best practices are also embedded within other use case categories (e.g., forms, CSS layout, media), you MUST retrieve the entire list of guidelines in your first turn by calling list_use_cases (without a category filter), along with get_page_dom, get_accessibility_tree, get_console_logs, get_lcp_element, and get_viewport_images in parallel. Call update_audit_checklist first to declare your plan. Do not restrict yourself only to files labeled as the accessibility category; evaluate the page against any guideline that has accessibility implications.";
+    focusInstructions = "\n- You MUST perform a targeted Accessibility Audit. Since accessibility best practices are also embedded within other use case categories (e.g., forms, CSS layout, media), you MUST retrieve the entire list of guidelines in your first turn by calling list_use_cases (without a category filter), along with get_page_dom, get_accessibility_tree, get_console_logs, get_lcp_element, and get_viewport_images in parallel. Do not restrict yourself only to files labeled as the accessibility category; evaluate the page against any guideline that has accessibility implications.";
   } else if (focus === "performance") {
     focusConstraint = "\nCategory constraint: 'performance'";
-    focusInstructions = "\n- You MUST perform a targeted Performance Audit. In your first turn, call update_audit_checklist to declare your plan, and call list_use_cases (filtering for 'performance' category), get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+    focusInstructions = "\n- You MUST perform a targeted Performance Audit. In your first turn, call list_use_cases (filtering for 'performance' category), get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   } else if (focus === "security-privacy") {
     focusConstraint = "\nCategory constraint: 'security' or 'privacy'";
-    focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. In your first turn, call update_audit_checklist to declare your plan, and call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+    focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. In your first turn, call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   }
 
   let timerInterval = startLoggerTimer("audit-timer");
@@ -282,6 +329,7 @@ Rules for browser compatibility:
 
     const systemInstruction = (focus === "full") ? GENERIC_SYSTEM_INSTRUCTION : FOCUSED_SYSTEM_INSTRUCTION;
     const report = await runGeminiAgent("audit", startPrompt, systemInstruction);
+    completeAllChecklistTasks("audit", true);
 
     latestReports.audit = report;
     renderOpportunities(results, report, true);
@@ -301,6 +349,7 @@ Rules for browser compatibility:
       console.error("Failed to save audit to history:", e);
     }
   } catch (err) {
+    completeAllChecklistTasks("audit", false);
     appendLog("audit", `Error: ${err.message}`, "system");
     showToast(`Audit failed: ${err.message}`, "error");
     logger.classList.add("completed");
@@ -375,12 +424,10 @@ async function runInspect(selector = null) {
     logger.classList.remove("completed");
     logger.querySelector(".logger-status-text").textContent = "Analyzing element...";
 
-    // Clear checklist
-    const checklistEl = document.getElementById("inspect-checklist");
-    if (checklistEl) {
-      checklistEl.classList.add("hidden");
-      checklistEl.innerHTML = "";
-    }
+    // Pre-populate checklist instantly
+    activeChecklistTasks.inspect = JSON.parse(JSON.stringify(INSPECT_PLAN));
+    activeLoggerId = "inspect";
+    updateChecklistUI();
 
     results.classList.add("hidden");
     document.getElementById("btn-export-inspect").classList.add("hidden");
@@ -436,7 +483,6 @@ Class Name: ${inspected.class || "None"}
 Computed Style: ${JSON.stringify(inspected.computedStyle)}
 
 Identify if there are any modernization opportunities that directly apply to this specific element.
-In your first turn, call update_audit_checklist to declare your checklist/plan.
 CRITICAL: Only recommend use cases that are relevant to this element's purpose, HTML tag, or styling. If no guidance applies, return an empty array [].
 
 Current Browser Support Policy (Baseline Target): ${config.baselineTarget}
@@ -448,6 +494,7 @@ Rules for browser compatibility:
 
     timerInterval = startLoggerTimer("inspect-timer");
     const report = await runGeminiAgent("inspect", startPrompt, INSPECT_SYSTEM_INSTRUCTION, null, screenshotData);
+    completeAllChecklistTasks("inspect", true);
 
     latestReports.inspect = report;
     renderOpportunities(results, report);
@@ -462,6 +509,7 @@ Rules for browser compatibility:
       chrome.tabs.sendMessage(tabId, { action: "audit-completed" }).catch(() => {});
     }
   } catch (err) {
+    completeAllChecklistTasks("inspect", false);
     appendLog("inspect", `Error: ${err.message}`, "system");
     showToast(`Inspect failed: ${err.message}`, "error");
     logger.classList.add("completed");
@@ -792,13 +840,27 @@ async function checkPendingAudit(pending = null) {
   }
 }
 
+// Automatically update remaining checklist tasks to completed or failed when run finishes
+function completeAllChecklistTasks(loggerId, success = true) {
+  const currentTasks = activeChecklistTasks[loggerId] || [];
+  currentTasks.forEach(task => {
+    if (task.status !== "completed" && task.status !== "failed") {
+      task.status = success ? "completed" : "failed";
+    }
+  });
+  // Re-render
+  updateChecklistUI();
+}
+
 // Global checklist renderer used by update_audit_checklist tool
-function updateChecklistUI(tasks) {
+function updateChecklistUI() {
   if (!activeLoggerId) return;
   const checklistEl = document.getElementById(`${activeLoggerId}-checklist`);
   if (!checklistEl) return;
 
-  if (tasks && tasks.length > 0) {
+  const currentTasks = activeChecklistTasks[activeLoggerId] || [];
+
+  if (currentTasks.length > 0) {
     checklistEl.classList.remove("hidden");
   } else {
     checklistEl.classList.add("hidden");
@@ -806,7 +868,7 @@ function updateChecklistUI(tasks) {
     return;
   }
 
-  checklistEl.innerHTML = tasks.map(task => {
+  checklistEl.innerHTML = currentTasks.map(task => {
     let stateClass = task.status || "pending";
     
     return `
@@ -819,6 +881,138 @@ function updateChecklistUI(tasks) {
       </div>
     `;
   }).join("");
+}
+
+// Automatically progress checklist task statuses in real-time based on the tool named, args and turn count (loopCount)
+function autoProgressChecklist(name, args, loopCount) {
+  if (!activeLoggerId) return;
+  const currentTasks = activeChecklistTasks[activeLoggerId] || [];
+  if (currentTasks.length === 0) return;
+
+  const setTaskStatus = (id, status, details = "") => {
+    const task = currentTasks.find(t => t.id === id);
+    if (task && task.status !== status) {
+      // Guard: once completed or failed, cannot go back to running or pending
+      if ((task.status === "completed" || task.status === "failed") && (status === "running" || status === "pending")) {
+        return;
+      }
+      task.status = status;
+      if (details) task.details = details;
+      updateChecklistUI();
+    }
+  };
+
+  const completeBefore = (id) => {
+    const targetIndex = currentTasks.findIndex(t => t.id === id);
+    if (targetIndex === -1) return;
+    for (let i = 0; i < targetIndex; i++) {
+      if (currentTasks[i].status !== "completed" && currentTasks[i].status !== "failed") {
+        currentTasks[i].status = "completed";
+      }
+    }
+  };
+
+  // Inspector check
+  const isInspector = currentTasks.some(t => t.id === "inspect-element");
+
+  if (loopCount === 1) {
+    if (isInspector) {
+      setTaskStatus("inspect-element", "running", `Analyzing element details via ${name}...`);
+    } else {
+      setTaskStatus("gather-context", "running", `Gathering initial page context (DOM, console)...`);
+    }
+  } else if (loopCount === 2) {
+    completeBefore("match-guidelines");
+    if (isInspector) {
+      setTaskStatus("inspect-element", "completed");
+    } else {
+      setTaskStatus("gather-context", "completed");
+    }
+    setTaskStatus("match-guidelines", "running", `Matching patterns & loading guidelines...`);
+  } else {
+    // Turn 3+: Auditing / Formulating phase
+    setTaskStatus("match-guidelines", "completed");
+
+    if (isInspector) {
+      completeBefore("formulate-fix");
+      setTaskStatus("formulate-fix", "running", `Formulating modernization recommendations...`);
+    } else {
+      completeBefore("audit-layout");
+
+      const argString = JSON.stringify(args || {}).toLowerCase();
+      const codeString = (args.code || "").toLowerCase();
+
+      const isA11y = name === "get_accessibility_tree" ||
+        argString.includes("aria") ||
+        argString.includes("role") ||
+        argString.includes("tabindex") ||
+        argString.includes("alt") ||
+        argString.includes("label") ||
+        argString.includes("keyboard") ||
+        argString.includes("focus");
+
+      const isPerf = name === "get_lcp_element" ||
+        name === "get_viewport_images" ||
+        name === "check_bfcache_reasons" ||
+        argString.includes("performance") ||
+        argString.includes("lcp") ||
+        argString.includes("image") ||
+        argString.includes("cache") ||
+        codeString.includes("lodash") ||
+        codeString.includes("libraries") ||
+        codeString.includes("jquery") ||
+        codeString.includes("load") ||
+        codeString.includes("performance");
+
+      const runDescription = (name === "execute_js" && args.purpose)
+        ? args.purpose
+        : `Auditing page structure via ${name}...`;
+      const a11yDescription = (name === "execute_js" && args.purpose)
+        ? args.purpose
+        : `Verifying accessibility via ${name}...`;
+      const perfDescription = (name === "execute_js" && args.purpose)
+        ? args.purpose
+        : `Analyzing performance via ${name}...`;
+
+      if (isA11y && currentTasks.some(t => t.id === "audit-accessibility")) {
+        completeBefore("audit-accessibility");
+        setTaskStatus("audit-accessibility", "running", a11yDescription);
+      } else if (isPerf && currentTasks.some(t => t.id === "audit-performance")) {
+        completeBefore("audit-performance");
+        setTaskStatus("audit-performance", "running", perfDescription);
+      } else {
+        const activeAuditTask = currentTasks.find(t => t.id.startsWith("audit-") && t.status === "pending");
+        if (activeAuditTask) {
+          setTaskStatus(activeAuditTask.id, "running", runDescription);
+        } else {
+          const runningAuditTask = currentTasks.find(t => t.id.startsWith("audit-") && t.status === "running");
+          if (runningAuditTask) {
+            runningAuditTask.details = runDescription;
+            updateChecklistUI();
+          } else {
+            const firstAuditTask = currentTasks.find(t => t.id.startsWith("audit-"));
+            if (firstAuditTask) {
+              setTaskStatus(firstAuditTask.id, "running", runDescription);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Automatically transition to the compiling report stage
+function autoProgressChecklistFinal(loggerId) {
+  const currentTasks = activeChecklistTasks[loggerId] || [];
+  currentTasks.forEach(task => {
+    if (task.id === "compile-report" || task.id === "formulate-fix") {
+      task.status = "running";
+      task.details = "Compiling and validating JSON report...";
+    } else if (task.status !== "completed" && task.status !== "failed") {
+      task.status = "completed";
+    }
+  });
+  updateChecklistUI();
 }
 
 function escapeHTML(str) {

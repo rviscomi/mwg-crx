@@ -73,6 +73,8 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
     loopCount++;
     appendLog(loggerId, `Calling Gemini API (Turn ${loopCount})...`, "system");
 
+    pruneHistory(history);
+
     const requestBody = {
       contents: history,
       tools: tools,
@@ -448,9 +450,10 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
   - In your final response turn, immediately after closing the \`</thought>\` tag, you MUST output the separator \`===RESPONSE===\` on a line by itself before writing your actual user-facing response. For example:
     <thought>I have checked the active page DOM. I will formulate the response now.</thought>
     ===RESPONSE===
-    Here is the modernized implementation for your navigation menu...
-  - This separator is critical to help our parser cleanly split your internal thinking from your user-facing output. NEVER omit this separator in your final response turn, and NEVER write user-facing message content before it.`;
+    Here is the modernized implementation for your navigation menu...`;
     }
+
+    pruneHistory(contents);
 
     const requestBody = {
       contents: contents,
@@ -801,3 +804,36 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
     }
   }
 }
+
+/**
+ * Safely prunes large tool response results from previous loops to minimize request token sizes.
+ * Keeps the very last entry (the current turn's tool response) intact.
+ */
+function pruneHistory(historyArray) {
+  if (!historyArray || historyArray.length <= 1) return;
+
+  // We prune everything except the last element
+  for (let i = 0; i < historyArray.length - 1; i++) {
+    const turn = historyArray[i];
+    if (turn.role === "user" && turn.parts) {
+      for (const part of turn.parts) {
+        if (part.functionResponse && part.functionResponse.response) {
+          const name = part.functionResponse.name;
+          const result = part.functionResponse.response.result;
+
+          // If the result is a string or object, and is large, prune it
+          if (result) {
+            const strLen = typeof result === 'string' ? result.length : JSON.stringify(result).length;
+            if (strLen > 1000) {
+              part.functionResponse.response.result = {
+                _pruned: true,
+                summary: `[Tool result of ${name} pruned. Length: ${strLen} characters. Refer to previous thoughts for details.]`
+              };
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
