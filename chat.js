@@ -3,6 +3,8 @@ let chatHistory = [];
 let isChatGenerating = false;
 let isListening = false;
 let voiceWindowId = null;
+let historyIndex = -1;
+let tempInput = "";
 
 // --- Persistence Helpers ---
 
@@ -50,8 +52,13 @@ async function loadAndRestoreChat() {
         return;
       }
       const bubble = appendChatMessage(msg.role, msg.content);
-      if (msg.role === "model" && msg.citations && msg.citations.length > 0) {
-        renderGreetingCitations(msg.citations, bubble);
+      if (msg.role === "model") {
+        if (msg.screenshot) {
+          appendScreenshotAttachment(msg.screenshot, bubble);
+        }
+        if (msg.citations && msg.citations.length > 0) {
+          renderGreetingCitations(msg.citations, bubble);
+        }
       }
     });
     
@@ -66,6 +73,32 @@ function unescapeHtmlEntities(str) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&");
+}
+
+function appendScreenshotAttachment(screenshotObj, bubble) {
+  if (!screenshotObj || !screenshotObj.screenshot || !bubble) return;
+  
+  const screenshotDiv = document.createElement("div");
+  screenshotDiv.className = "chat-screenshot-attachment";
+  screenshotDiv.style.marginTop = "12px";
+  screenshotDiv.style.borderTop = "1px solid rgba(255, 255, 255, 0.1)";
+  screenshotDiv.style.paddingTop = "12px";
+  screenshotDiv.innerHTML = `
+    <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-sans); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted); pointer-events: none;">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <span>Screenshot Attachment ${screenshotObj.selector ? `(${screenshotObj.selector})` : ''}</span>
+    </div>
+    <img src="${screenshotObj.screenshot}" alt="Captured view" style="max-width: 100%; max-height: 250px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); display: block; cursor: pointer; object-fit: contain; background: #222;" />
+  `;
+  
+  screenshotDiv.querySelector("img").onclick = () => {
+    const w = window.open();
+    w.document.write(`<img src="${screenshotObj.screenshot}" style="max-width:100%;" />`);
+  };
+  bubble.appendChild(screenshotDiv);
 }
 
 // Highlight function for marked
@@ -201,6 +234,9 @@ function renderDinoResponse(content, container) {
   processed = processed.replace(/\[([^\]]+)\]\((inspect:[^)]+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
+  processed = processed.replace(/\[([^\]]+)\]\((useCaseId:[^)]+)\)/g, (match, label, url) => {
+    return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
+  });
 
   container.innerHTML = marked.parse(processed);
   
@@ -241,6 +277,63 @@ function renderDinoResponse(content, container) {
       }
     });
   });
+
+  // Bind [Label](useCaseId:useCaseId) guide links
+  container.querySelectorAll('a[href^="useCaseId:"]').forEach(link => {
+    const href = link.getAttribute("href");
+    const targetGuide = decodeURIComponent(href.substring(10));
+    link.className = "guide-link-btn";
+    link.removeAttribute("href");
+    link.style.cursor = "pointer";
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        let guideId = targetGuide;
+        let anchor = "";
+        const hashIdx = targetGuide.indexOf("#");
+        if (hashIdx !== -1) {
+          guideId = targetGuide.substring(0, hashIdx);
+          anchor = targetGuide.substring(hashIdx);
+        }
+        
+        let uc = useCasesCache.find(u => u.id === guideId);
+        if (!uc && guideId) {
+          const matchingUcs = useCasesCache
+            .filter(u => guideId.startsWith(u.id))
+            .sort((a, b) => b.id.length - a.id.length);
+          if (matchingUcs.length > 0) {
+            const matchingUc = matchingUcs[0];
+            uc = matchingUc;
+            const rest = guideId.substring(matchingUc.id.length);
+            anchor = `#${rest.replace(/^[-_]+/, "")}`;
+            guideId = matchingUc.id;
+          }
+        }
+
+        const category = uc ? uc.category : "user-experience";
+        const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${guideId}.md${anchor}`;
+        chrome.tabs.create({ url });
+        showToast(`Opening GitHub guide for ${guideId}...`, "success");
+      } catch (err) {
+        showToast(`Failed to open guide: ${err.message}`, "error");
+      }
+    });
+  });
+
+  // Bind standard HTTP/HTTPS links to open in a new tab via chrome.tabs.create
+  container.querySelectorAll('a[href^="http://"], a[href^="https://"]').forEach(link => {
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const url = link.getAttribute("href");
+      if (url) {
+        chrome.tabs.create({ url });
+      }
+    });
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -277,6 +370,58 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSendChatMessage();
+      } else if (e.key === "ArrowUp") {
+        const text = chatInput.value;
+        const firstNewline = text.indexOf('\n');
+        const cursorPosition = chatInput.selectionStart;
+
+        if (firstNewline === -1 || cursorPosition <= firstNewline) {
+          const userMessages = chatHistory
+            .filter(msg => msg.role === "user" && !msg.hidden && !(msg.content && msg.content.startsWith("I have a question about this modernization audit result:")))
+            .map(msg => msg.content);
+
+          if (userMessages.length > 0) {
+            e.preventDefault();
+            if (historyIndex === -1) {
+              tempInput = chatInput.value;
+              historyIndex = userMessages.length - 1;
+            } else {
+              historyIndex--;
+              if (historyIndex < 0) {
+                historyIndex = 0;
+              }
+            }
+            chatInput.value = userMessages[historyIndex];
+            chatInput.style.height = "auto";
+            chatInput.style.height = chatInput.scrollHeight + "px";
+            chatInput.selectionStart = chatInput.selectionEnd = chatInput.value.length;
+          }
+        }
+      } else if (e.key === "ArrowDown") {
+        if (historyIndex !== -1) {
+          const text = chatInput.value;
+          const lastNewline = text.lastIndexOf('\n');
+          const cursorPosition = chatInput.selectionStart;
+
+          if (lastNewline === -1 || cursorPosition > lastNewline) {
+            const userMessages = chatHistory
+              .filter(msg => msg.role === "user" && !msg.hidden && !(msg.content && msg.content.startsWith("I have a question about this modernization audit result:")))
+              .map(msg => msg.content);
+
+            e.preventDefault();
+            historyIndex++;
+            if (historyIndex >= userMessages.length) {
+              chatInput.value = tempInput;
+              historyIndex = -1;
+              tempInput = "";
+            } else {
+              chatInput.value = userMessages[historyIndex];
+            }
+            chatInput.style.height = "auto";
+            chatInput.style.height = chatInput.scrollHeight + "px";
+            chatInput.selectionStart = chatInput.selectionEnd = chatInput.value.length;
+          }
+        }
       }
     });
     chatInput.addEventListener("input", () => {
@@ -307,6 +452,8 @@ async function startChatWithOpportunity(opp) {
   }
   
   hasInitializedChat = true;
+  historyIndex = -1;
+  tempInput = "";
 
   const chatMessages = document.getElementById("chat-messages");
   if (chatMessages) {
@@ -575,6 +722,8 @@ async function handleNewChat() {
     await chrome.storage.session.remove(storageKey);
   }
   chatHistory = [];
+  historyIndex = -1;
+  tempInput = "";
   await startFreshChat();
   showToast("Started a new conversation!", "success");
 }
@@ -583,6 +732,8 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (tabId === chrome.devtools.inspectedWindow.tabId && changeInfo.url) {
       chatHistory = [];
+      historyIndex = -1;
+      tempInput = "";
       const restored = await loadAndRestoreChat();
       if (!restored) {
         await startFreshChat();
@@ -653,15 +804,23 @@ function renderSteps(steps, bubble, isGenerating) {
     if (step.type === 'tool') {
       const argsStr = step.args ? JSON.stringify(step.args, null, 2) : "";
       let resultStr = "";
+      let screenshotHtml = "";
       if (step.status === 'completed' && step.result !== undefined) {
-        if (typeof step.result === 'string') {
-          resultStr = step.result;
+        if (step.name === "take_screenshot" && step.result.screenshot) {
+          resultStr = `Screenshot captured successfully (${step.result.width || 'unknown'}x${step.result.height || 'unknown'}px).`;
+          screenshotHtml = `
+            <div class="dino-step-screenshot-container" style="margin-top: 8px;">
+              <img class="dino-step-screenshot-img" src="${step.result.screenshot}" alt="Captured Screenshot" style="max-width: 100%; max-height: 250px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); display: block; object-fit: contain; cursor: pointer; background: #222;" />
+            </div>`;
         } else {
-          resultStr = JSON.stringify(step.result, null, 2);
-        }
-        
-        if (resultStr.length > 500) {
-          resultStr = resultStr.substring(0, 500) + "\n... (truncated)";
+          if (typeof step.result === 'string') {
+            resultStr = step.result;
+          } else {
+            resultStr = JSON.stringify(step.result, null, 2);
+          }
+          if (resultStr.length > 500) {
+            resultStr = resultStr.substring(0, 500) + "\n... (truncated)";
+          }
         }
       } else if (step.status === 'failed' && step.error) {
         resultStr = `Error: ${step.error}`;
@@ -670,6 +829,7 @@ function renderSteps(steps, bubble, isGenerating) {
       detailsHtml = `
         <div class="dino-step-args">Args: <code>${escapeHtmlForChat(argsStr)}</code></div>
         ${resultStr ? `<div class="dino-step-result">Result: <pre><code>${escapeHtmlForChat(resultStr)}</code></pre></div>` : ''}
+        ${screenshotHtml}
       `;
     } else {
       detailsHtml = `<div class="dino-step-thought-text">${escapeHtmlForChat(step.details)}</div>`;
@@ -699,6 +859,13 @@ function renderSteps(steps, bubble, isGenerating) {
         details.classList.toggle("hidden");
       }
     });
+  });
+
+  stepsListEl.querySelectorAll(".dino-step-screenshot-img").forEach(img => {
+    img.onclick = () => {
+      const w = window.open();
+      w.document.write(`<img src="${img.src}" style="max-width: 100%;" />`);
+    };
   });
 }
 
@@ -747,6 +914,10 @@ function appendChatMessage(role, content, isTyping = false) {
 function getFriendlyErrorMessage(err) {
   const msg = err.message || "";
   
+  if (msg.includes("context invalidated") || msg.includes("Extension context invalidated")) {
+    return `Rawr! 🦖 The extension context was invalidated (probably due to an extension reload or update). Please close and reopen DevTools to restart Dino! 🐾`;
+  }
+  
   if (msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("experiencing high demand")) {
     let response = `Rawr! 🦖 The Gemini API is currently experiencing a massive meteor shower of demand (Error 503)! ☄️ Spikes in demand are usually temporary. Please try again in a few moments, or check back once the dust settles!`;
     
@@ -789,6 +960,9 @@ async function handleSendChatMessage() {
 
   const message = chatInput.value.trim();
   if (!message) return;
+
+  historyIndex = -1;
+  tempInput = "";
 
   chatInput.value = "";
   chatInput.style.height = "auto";
@@ -957,8 +1131,18 @@ async function handleSendChatMessage() {
       renderDinoResponse(finalResponse, responseContent);
     }
 
+    const screenshotStep = chatSteps.find(s => s.type === 'tool' && s.name === 'take_screenshot' && s.status === 'completed' && s.result?.screenshot);
+    if (screenshotStep) {
+      appendScreenshotAttachment(screenshotStep.result, modelMsgBubble);
+    }
+
     chatHistory.push({ role: "user", content: message });
-    chatHistory.push({ role: "model", content: finalResponse, citations: citations || [] });
+    chatHistory.push({ 
+      role: "model", 
+      content: finalResponse, 
+      citations: citations || [],
+      screenshot: screenshotStep ? screenshotStep.result : null 
+    });
     await persistCurrentChatHistory();
 
     // Render citations if we have them

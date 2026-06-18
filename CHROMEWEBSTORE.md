@@ -22,6 +22,8 @@ Key Features:
 - Page Audit (Full Scan): Analyzes the page's DOM, styling, and configuration to find legacy patterns (e.g., custom JS scroll listener) and recommend native web platform replacements (e.g., CSS scrollbar-color).
 - Element Inspector: Select any custom component in the DevTools "Elements" panel, and click "Analyze Selected Element" to receive targeted refactoring tips.
 - Side-by-Side Diff: View original legacy code compared directly to modernized code recommendations.
+- Visual Verification: Take visual screenshots of the viewport or individual page elements directly from the agent chat to provide visual context during audits.
+- Back-Forward Cache (bfcache) Audits: Scan the page using standard web APIs to detect bfcache compatibility and list detailed blocking reasons.
 - Toast Notifications: A smooth toast notification banner alerts you of status changes without blocking developer workflow.
 - 100% Client-Side: Your Gemini API Key is stored safely in Chrome local storage. All requests are sent directly to the Gemini API and GitHub guidance files from your browser.
 ```
@@ -36,16 +38,19 @@ These justifications must be submitted to the Chrome Web Store review team to ex
 - **Justification**: Required to securely save the user's Gemini API Key, preferred Gemini Model (e.g., `gemini-3.5-flash`), and cache loaded guidance database use-cases offline.
 
 ### 2. `scripting`
-- **Justification**: Required to run a lightweight script on the inspected page tab to traverse and capture the simplified DOM hierarchy for analysis.
+- **Justification**: Required to run a lightweight script on the inspected page tab to traverse and capture the simplified DOM hierarchy for analysis, as well as coordinate visual highlights and scrolling behaviors.
 
 ### 3. `tabs`
-- **Justification**: Required to query the active tab's properties (such as the URL and title) to perform the audit, and to programmatically open the guidance pages on GitHub in a new browser tab.
+- **Justification**: Required to query the active tab's properties (such as the URL and title) to perform the audit, capture screenshots of the active tab, and programmatically open the guidance pages on GitHub in a new browser tab.
 
 ### 4. `audioCapture`
 - **Justification**: Required to access the microphone for transcribing voice messages inside the "Ask Dino" interactive modernization chat panel.
 
-### 5. `<all_urls>` (Host Permissions)
-- **Justification**: Required to allow developers to summon the auditor panel and run modernization scans on any production domain they are currently inspecting.
+### 5. `contextMenus`
+- **Justification**: Required to add right-click context menu options to elements on any web page, enabling developers to immediately target an element and trigger a Dino audit on it inside the DevTools panel.
+
+### 6. `<all_urls>` (Host Permissions)
+- **Justification**: Required to allow developers to summon the auditor panel, capture screenshots, and run modernization scans on any production domain they are currently inspecting.
 
 ---
 

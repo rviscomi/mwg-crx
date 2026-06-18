@@ -13,22 +13,46 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadUseCases();
   bindUIEvents();
   await renderAuditHistoryList();
+
+  // Check for pending context menu audit on startup
+  await checkPendingAudit();
+
+  // Listen for storage changes to trigger dynamic audits
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.dinoPendingAudit) {
+      const newVal = changes.dinoPendingAudit.newValue;
+      if (newVal) {
+        checkPendingAudit(newVal);
+      }
+    }
+  });
 });
+
+function switchTab(tabName) {
+  const tabs = document.querySelectorAll(".tab-item");
+  const views = document.querySelectorAll(".tab-view");
+
+  tabs.forEach(t => t.classList.remove("active"));
+  views.forEach(v => v.classList.remove("active"));
+
+  const targetTab = Array.from(tabs).find(t => t.dataset.tab === tabName);
+  if (targetTab) {
+    targetTab.classList.add("active");
+  }
+
+  const targetView = document.getElementById(`view-${tabName}`);
+  if (targetView) {
+    targetView.classList.add("active");
+  }
+}
 
 // Navigation / Tabs Setup
 function setupTabs() {
   const tabs = document.querySelectorAll(".tab-item");
-  const views = document.querySelectorAll(".tab-view");
 
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
-      tabs.forEach(t => t.classList.remove("active"));
-      views.forEach(v => v.classList.remove("active"));
-
-      tab.classList.add("active");
-      const targetView = document.getElementById(`view-${tab.dataset.tab}`);
-      if (targetView) targetView.classList.add("active");
-
+      switchTab(tab.dataset.tab);
       // Close the drawer automatically when a tab is selected
       if (drawer) {
         closeDrawer();
@@ -179,12 +203,17 @@ function abortAnalysis() {
 function startLoggerTimer(timerId) {
   const timerEl = document.getElementById(timerId);
   if (!timerEl) return null;
+  if (timerEl._timerInterval) {
+    clearInterval(timerEl._timerInterval);
+  }
   timerEl.textContent = "0.0s";
   const startTime = Date.now();
-  return setInterval(() => {
+  const interval = setInterval(() => {
     const elapsed = (Date.now() - startTime) / 1000;
     timerEl.textContent = `${elapsed.toFixed(1)}s`;
   }, 100);
+  timerEl._timerInterval = interval;
+  return interval;
 }
 
 // Action: Full/Focused Page Audit
@@ -208,7 +237,15 @@ async function runAudit() {
   document.getElementById("btn-answer-now-audit").classList.remove("hidden");
   logger.classList.remove("hidden");
   logger.classList.remove("completed");
-  logger.querySelector(".logger-header span:last-child").textContent = "Running analysis...";
+  logger.querySelector(".logger-status-text").textContent = "Running analysis...";
+  
+  // Clear checklist
+  const checklistEl = document.getElementById("audit-checklist");
+  if (checklistEl) {
+    checklistEl.classList.add("hidden");
+    checklistEl.innerHTML = "";
+  }
+
   results.classList.add("hidden");
   document.getElementById("btn-export-audit").classList.add("hidden");
   latestReports.audit = null;
@@ -218,16 +255,16 @@ async function runAudit() {
   let focusInstructions = "";
 
   if (focus === "full") {
-    focusInstructions = "\n- You MUST perform a Full Page Audit. In your first turn, call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+    focusInstructions = "\n- You MUST perform a Full Page Audit. In your first turn, call update_audit_checklist to declare your plan, and call list_use_cases, get_page_dom, get_accessibility_tree, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   } else if (focus === "accessibility") {
     focusConstraint = "\nCategory constraint: 'accessibility'";
-    focusInstructions = "\n- You MUST perform a targeted Accessibility Audit. Since accessibility best practices are also embedded within other use case categories (e.g., forms, CSS layout, media), you MUST retrieve the entire list of guidelines in your first turn by calling list_use_cases (without a category filter), along with get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel. Do not restrict yourself only to files labeled as the accessibility category; evaluate the page against any guideline that has accessibility implications.";
+    focusInstructions = "\n- You MUST perform a targeted Accessibility Audit. Since accessibility best practices are also embedded within other use case categories (e.g., forms, CSS layout, media), you MUST retrieve the entire list of guidelines in your first turn by calling list_use_cases (without a category filter), along with get_page_dom, get_accessibility_tree, get_console_logs, get_lcp_element, and get_viewport_images in parallel. Call update_audit_checklist first to declare your plan. Do not restrict yourself only to files labeled as the accessibility category; evaluate the page against any guideline that has accessibility implications.";
   } else if (focus === "performance") {
     focusConstraint = "\nCategory constraint: 'performance'";
-    focusInstructions = "\n- You MUST perform a targeted Performance Audit. In your first turn, call list_use_cases (filtering for 'performance' category), get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+    focusInstructions = "\n- You MUST perform a targeted Performance Audit. In your first turn, call update_audit_checklist to declare your plan, and call list_use_cases (filtering for 'performance' category), get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   } else if (focus === "security-privacy") {
     focusConstraint = "\nCategory constraint: 'security' or 'privacy'";
-    focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. In your first turn, call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
+    focusInstructions = "\n- You MUST perform a targeted Security and Privacy Audit. In your first turn, call update_audit_checklist to declare your plan, and call list_use_cases, get_page_dom, get_console_logs, get_lcp_element, and get_viewport_images in parallel to discover relevant guidelines and audit targets.";
   }
 
   let timerInterval = startLoggerTimer("audit-timer");
@@ -251,7 +288,7 @@ Rules for browser compatibility:
     results.classList.remove("hidden");
     document.getElementById("btn-export-audit").classList.remove("hidden");
     logger.classList.add("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analysis completed!";
+    logger.querySelector(".logger-status-text").textContent = "Analysis completed!";
     showToast("Page audit completed successfully!", "success");
 
     // Persist audit results in history
@@ -267,7 +304,7 @@ Rules for browser compatibility:
     appendLog("audit", `Error: ${err.message}`, "system");
     showToast(`Audit failed: ${err.message}`, "error");
     logger.classList.add("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analysis failed";
+    logger.querySelector(".logger-status-text").textContent = "Analysis failed";
   } finally {
     if (timerInterval) clearInterval(timerInterval);
     btn.disabled = false;
@@ -277,7 +314,11 @@ Rules for browser compatibility:
 }
 
 // Action: DevTools Element Inspector Analysis
-async function runInspect() {
+async function runInspect(selector = null) {
+  if (selector && typeof selector !== "string") {
+    selector = null;
+  }
+
   const logger = document.getElementById("inspect-logger");
   const results = document.getElementById("inspect-results");
   const btn = document.getElementById("btn-run-inspect");
@@ -290,11 +331,37 @@ async function runInspect() {
     return;
   }
 
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  let timerInterval = null;
+
   try {
-    const inspected = await getInspectedElement();
+    const inspected = selector
+      ? await getInspectedElementBySelector(selector)
+      : await getInspectedElement();
+
     if (!inspected) {
-      showToast("No element is currently selected in DevTools. Please select an element first!", "warning");
+      if (selector) {
+        showToast("Tagged element could not be found on the page.", "warning");
+      } else {
+        showToast("No element is currently selected in DevTools. Please select an element first!", "warning");
+      }
       return;
+    }
+
+    if (selector) {
+      removeInspectTag(selector);
+    }
+
+    // Notify tab content script that the audit has started
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, { action: "audit-started" }).catch(() => {});
+    }
+
+    const screenshotContainer = document.getElementById("inspect-screenshot-container");
+    const screenshotImg = document.getElementById("inspect-screenshot-img");
+    if (screenshotContainer) {
+      screenshotContainer.classList.add("hidden");
+      if (screenshotImg) screenshotImg.src = "";
     }
 
     isAborted = false;
@@ -306,12 +373,59 @@ async function runInspect() {
     document.getElementById("btn-answer-now-inspect").classList.remove("hidden");
     logger.classList.remove("hidden");
     logger.classList.remove("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analyzing element...";
+    logger.querySelector(".logger-status-text").textContent = "Analyzing element...";
+
+    // Clear checklist
+    const checklistEl = document.getElementById("inspect-checklist");
+    if (checklistEl) {
+      checklistEl.classList.add("hidden");
+      checklistEl.innerHTML = "";
+    }
+
     results.classList.add("hidden");
     document.getElementById("btn-export-inspect").classList.add("hidden");
     latestReports.inspect = null;
     preview.classList.remove("hidden");
     previewCode.textContent = `<${inspected.tagName}${inspected.class ? ' class="' + inspected.class + '"' : ""}>`;
+
+    let screenshotData = null;
+    if (config.capScreenshot !== false) {
+      try {
+        let screenshotSelector = selector;
+        if (!screenshotSelector) {
+          await new Promise((resolve) => {
+            chrome.devtools.inspectedWindow.eval(
+              `if ($0) { $0.setAttribute('data-dino-screenshot-target', 'true'); }`,
+              () => resolve()
+            );
+          });
+          screenshotSelector = "[data-dino-screenshot-target='true']";
+        }
+        
+        appendLog("inspect", "Capturing element screenshot...", "system");
+        const res = await takeScreenshot(screenshotSelector);
+        if (res && res.screenshot) {
+          screenshotData = res.screenshot;
+          if (screenshotImg && screenshotContainer) {
+            screenshotImg.src = screenshotData;
+            screenshotContainer.classList.remove("hidden");
+            screenshotContainer.onclick = () => {
+              const w = window.open();
+              w.document.write(`<img src="${screenshotData}" style="max-width:100%;" />`);
+            };
+          }
+        }
+
+        if (screenshotSelector === "[data-dino-screenshot-target='true']") {
+          chrome.devtools.inspectedWindow.eval(
+            `if ($0) { $0.removeAttribute('data-dino-screenshot-target'); }`
+          );
+        }
+      } catch (screenshotErr) {
+        console.warn("Failed to capture inspect element screenshot:", screenshotErr);
+        appendLog("inspect", `Screenshot capture skipped: ${screenshotErr.message}`, "system");
+      }
+    }
 
     const startPrompt = `You are analyzing a single element selected by the user in DevTools.
 Selected Element:
@@ -322,6 +436,7 @@ Class Name: ${inspected.class || "None"}
 Computed Style: ${JSON.stringify(inspected.computedStyle)}
 
 Identify if there are any modernization opportunities that directly apply to this specific element.
+In your first turn, call update_audit_checklist to declare your checklist/plan.
 CRITICAL: Only recommend use cases that are relevant to this element's purpose, HTML tag, or styling. If no guidance applies, return an empty array [].
 
 Current Browser Support Policy (Baseline Target): ${config.baselineTarget}
@@ -331,21 +446,31 @@ Rules for browser compatibility:
 - If the target is 'newly-available', you only need to include fallbacks for features that are experimental/non-standard.
 - If the target is 'none', you do not need to include any fallback code.`;
 
-    let timerInterval = startLoggerTimer("inspect-timer");
-    const report = await runGeminiAgent("inspect", startPrompt, INSPECT_SYSTEM_INSTRUCTION);
+    timerInterval = startLoggerTimer("inspect-timer");
+    const report = await runGeminiAgent("inspect", startPrompt, INSPECT_SYSTEM_INSTRUCTION, null, screenshotData);
 
     latestReports.inspect = report;
     renderOpportunities(results, report);
     results.classList.remove("hidden");
     document.getElementById("btn-export-inspect").classList.remove("hidden");
     logger.classList.add("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analysis completed!";
+    logger.querySelector(".logger-status-text").textContent = "Analysis completed!";
     showToast("Selected element analysis completed!", "success");
+
+    // Notify tab content script that the audit has completed
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, { action: "audit-completed" }).catch(() => {});
+    }
   } catch (err) {
     appendLog("inspect", `Error: ${err.message}`, "system");
     showToast(`Inspect failed: ${err.message}`, "error");
     logger.classList.add("completed");
-    logger.querySelector(".logger-header span:last-child").textContent = "Analysis failed";
+    logger.querySelector(".logger-status-text").textContent = "Analysis failed";
+
+    // Also notify on error/failure
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, { action: "audit-completed" }).catch(() => {});
+    }
   } finally {
     if (timerInterval) clearInterval(timerInterval);
     btn.disabled = false;
@@ -639,4 +764,68 @@ if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.onUpdated) {
       await renderAuditHistoryList();
     }
   });
+}
+
+async function checkPendingAudit(pending = null) {
+  try {
+    if (!pending) {
+      const data = await chrome.storage.local.get("dinoPendingAudit");
+      pending = data.dinoPendingAudit;
+    }
+
+    if (!pending) return;
+
+    // Check if the pending audit is for the current tab we are inspecting
+    const currentTabId = chrome.devtools.inspectedWindow.tabId;
+    if (pending.tabId === currentTabId) {
+      // Clear the storage so we don't trigger it again
+      await chrome.storage.local.remove("dinoPendingAudit");
+
+      // Switch to the Element Inspector tab
+      switchTab("inspect");
+
+      // Start the analysis on the tagged element
+      runInspect("[data-dino-inspecting]");
+    }
+  } catch (err) {
+    console.error("Error checking pending audit:", err);
+  }
+}
+
+// Global checklist renderer used by update_audit_checklist tool
+function updateChecklistUI(tasks) {
+  if (!activeLoggerId) return;
+  const checklistEl = document.getElementById(`${activeLoggerId}-checklist`);
+  if (!checklistEl) return;
+
+  if (tasks && tasks.length > 0) {
+    checklistEl.classList.remove("hidden");
+  } else {
+    checklistEl.classList.add("hidden");
+    checklistEl.innerHTML = "";
+    return;
+  }
+
+  checklistEl.innerHTML = tasks.map(task => {
+    let stateClass = task.status || "pending";
+    
+    return `
+      <div class="checklist-item ${stateClass}">
+        <span class="checklist-icon"></span>
+        <div class="checklist-details">
+          <span class="checklist-title">${escapeHTML(task.title)}</span>
+          ${task.details ? `<span class="checklist-status-desc">${escapeHTML(task.details)}</span>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function escapeHTML(str) {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
 }

@@ -8,13 +8,14 @@ let config = {
   capInteraction: true,
   capLogs: true,
   capPreview: true,
-  capOverride: true
+  capOverride: true,
+  capScreenshot: true
 };
 
 async function loadConfig() {
   const data = await chrome.storage.local.get([
     "apiKey", "model", "baseUrl", "baselineTarget",
-    "capInteraction", "capLogs", "capPreview", "capOverride"
+    "capInteraction", "capLogs", "capPreview", "capOverride", "capScreenshot"
   ]);
 
   if (data.apiKey) {
@@ -44,11 +45,13 @@ async function loadConfig() {
   config.capLogs = data.capLogs !== false;
   config.capPreview = data.capPreview !== false;
   config.capOverride = data.capOverride !== false;
+  config.capScreenshot = data.capScreenshot !== false;
 
   document.getElementById("settings-cap-interaction").checked = config.capInteraction;
   document.getElementById("settings-cap-logs").checked = config.capLogs;
   document.getElementById("settings-cap-preview").checked = config.capPreview;
   document.getElementById("settings-cap-override").checked = config.capOverride;
+  document.getElementById("settings-cap-screenshot").checked = config.capScreenshot;
 }
 
 async function saveConfig(event) {
@@ -61,12 +64,13 @@ async function saveConfig(event) {
   const capLogs = document.getElementById("settings-cap-logs").checked;
   const capPreview = document.getElementById("settings-cap-preview").checked;
   const capOverride = document.getElementById("settings-cap-override").checked;
+  const capScreenshot = document.getElementById("settings-cap-screenshot").checked;
 
   if (!baseUrl.endsWith("/")) baseUrl += "/";
 
   config = {
     apiKey, model, apiTier: "free", baseUrl, baselineTarget,
-    capInteraction, capLogs, capPreview, capOverride
+    capInteraction, capLogs, capPreview, capOverride, capScreenshot
   };
   await chrome.storage.local.set(config);
   showToast("Settings saved successfully!", "success");

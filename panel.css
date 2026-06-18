@@ -1787,4 +1787,120 @@ body {
   background-color: rgba(239, 68, 68, 0.1);
 }
 
+/* Audit Checklist Styling */
+.audit-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.checklist-item.running {
+  background-color: rgba(79, 70, 229, 0.05);
+  border-color: rgba(79, 70, 229, 0.2);
+}
+
+.checklist-item.completed {
+  background-color: rgba(16, 185, 129, 0.03);
+}
+
+.checklist-item.failed {
+  background-color: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.checklist-icon {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+/* pending */
+.checklist-item.pending .checklist-icon {
+  border: 2px solid var(--text-muted);
+  background-color: transparent;
+}
+
+/* running */
+.checklist-item.running .checklist-icon {
+  border: 2px solid var(--accent-hover);
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+  border-radius: 50%;
+}
+
+/* completed */
+.checklist-item.completed .checklist-icon {
+  background-color: var(--success-color);
+  color: #121318;
+}
+.checklist-item.completed .checklist-icon::before {
+  content: "✓";
+  font-weight: bold;
+}
+
+/* failed */
+.checklist-item.failed .checklist-icon {
+  background-color: var(--danger-color);
+  color: white;
+}
+.checklist-item.failed .checklist-icon::before {
+  content: "✗";
+  font-weight: bold;
+}
+
+.checklist-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checklist-title {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.checklist-item.pending .checklist-title {
+  color: var(--text-secondary);
+}
+
+.checklist-item.completed .checklist-title {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.checklist-status-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
 

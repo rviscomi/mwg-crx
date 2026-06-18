@@ -8,7 +8,8 @@
     "tabs",
     "scripting",
     "storage",
-    "audioCapture"
+    "audioCapture",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -19,6 +20,11 @@
       "js": ["content.js"],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-isolated.js"],
+      "run_at": "document_start"
     }
   ],
   "background": {

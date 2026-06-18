@@ -2,115 +2,13 @@
 let isAborted = false;
 let currentAbortController = null;
 let isEarlyCompletionRequested = false;
-let recentRequests = [];
+let activeLoggerId = null;
 
 function earlyCompleteAnalysis() {
   isEarlyCompletionRequested = true;
   if (currentAbortController) {
     currentAbortController.abort();
   }
-}
-
-/**
- * Robustly parses a response text chunk to separate the <thought> block from user-facing content.
- * Handles missing or malformed closing thought tags using heuristics.
- * @param {string} text - The input model response text.
- * @returns {{thoughts: string, response: string}} The parsed thoughts and user content.
- */
-function parseThoughtAndContent(text) {
-  let thoughts = "";
-  let response = text || "";
-
-  // 1. Primary check: Try to split by the explicit ===RESPONSE=== separator
-  const parts = response.split(/===\s*RESPONSE\s*===/gi);
-  if (parts.length > 1) {
-    let thoughtPart = parts[0];
-    const thoughtStart = thoughtPart.indexOf("<thought");
-    if (thoughtStart !== -1) {
-      let openingTagEnd = thoughtPart.indexOf(">", thoughtStart);
-      if (openingTagEnd === -1 || openingTagEnd > thoughtStart + 20) {
-        openingTagEnd = thoughtStart + 8;
-      } else {
-        openingTagEnd = openingTagEnd + 1;
-      }
-      thoughtPart = thoughtPart.substring(openingTagEnd);
-    }
-    const closingTagMatch = thoughtPart.match(/<\/\s*thought\s*>\s*$/i);
-    if (closingTagMatch) {
-      thoughtPart = thoughtPart.substring(0, closingTagMatch.index);
-    }
-    
-    thoughts = thoughtPart.trim();
-    response = parts.slice(1).join("\n").trim();
-  } else {
-    // 2. Secondary check: Try to split by the standard </thought> tag
-    const thoughtStart = response.indexOf("<thought");
-    if (thoughtStart !== -1) {
-      let openingTagEnd = response.indexOf(">", thoughtStart);
-      if (openingTagEnd === -1 || openingTagEnd > thoughtStart + 20) {
-        openingTagEnd = thoughtStart + 8;
-      } else {
-        openingTagEnd = openingTagEnd + 1;
-      }
-
-      const closingTagMatch = response.substring(openingTagEnd).match(/<\/\s*thought\s*>/i);
-      if (closingTagMatch) {
-        const thoughtEnd = openingTagEnd + closingTagMatch.index;
-        const closingTagEnd = thoughtEnd + closingTagMatch[0].length;
-        thoughts = response.substring(openingTagEnd, thoughtEnd).trim();
-        response = (response.substring(0, thoughtStart) + "\n" + response.substring(closingTagEnd)).trim();
-      } else {
-        // Heuristic fallback if closing tag is missing
-        const remainder = response.substring(openingTagEnd);
-        
-        // Look for Dino greeting indicators (e.g. Rawr!, 🦖, Dino here)
-        const dinoStartMatch = remainder.match(/(?:Rawr!|🦖|Dino\s+here|Rex\s+here)/i);
-        const dinoIdx = dinoStartMatch ? dinoStartMatch.index : -1;
-
-        const markers = [
-          dinoIdx,
-          remainder.indexOf("\n#"),
-          remainder.indexOf("\n`"),
-          remainder.indexOf("```")
-        ].filter(idx => idx !== -1);
-
-        if (markers.length > 0) {
-          const splitIdx = Math.min(...markers);
-          let cleanSplitIdx = splitIdx;
-          const lastNewline = remainder.lastIndexOf("\n", splitIdx);
-          if (lastNewline !== -1 && lastNewline > splitIdx - 100) {
-            cleanSplitIdx = lastNewline;
-          }
-          thoughts = remainder.substring(0, cleanSplitIdx).trim();
-          response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(cleanSplitIdx)).trim();
-        } else if (remainder.length > 800) {
-          const lastPara = remainder.lastIndexOf("\n\n");
-          if (lastPara !== -1 && lastPara > 200) {
-            thoughts = remainder.substring(0, lastPara).trim();
-            response = (response.substring(0, thoughtStart) + "\n" + remainder.substring(lastPara)).trim();
-          } else {
-            thoughts = remainder.trim();
-            response = response.substring(0, thoughtStart).trim();
-          }
-        } else {
-          thoughts = remainder.trim();
-          response = response.substring(0, thoughtStart).trim();
-        }
-      }
-    }
-  }
-
-  // Strip partial or full ===RESPONSE=== markers from response
-  const partialRegex = /^\s*(?:={1,3}(?:\s*(?:R(?:E(?:S(?:P(?:O(?:N(?:S(?:E(?:\s*={0,3})?)?)?)?)?)?)?)?)?)?)?$/i;
-  const fullRegex = /^\s*===\s*RESPONSE\s*===\s*/i;
-
-  if (partialRegex.test(response)) {
-    response = "";
-  } else {
-    response = response.replace(fullRegex, "");
-  }
-
-  return { thoughts, response };
 }
 
 function supportsThinking(modelName) {
@@ -121,534 +19,8 @@ function supportsThinking(modelName) {
          name.includes("thinking");
 }
 
-function getEnabledTools() {
-  const coreTools = [
-    {
-      name: "list_use_cases",
-      description: "Retrieve a list of available Modern Web Guidance use case IDs, categories, and descriptions. Can optionally filter by category.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          category: {
-            type: "STRING",
-            description: "Optional category to filter by (e.g., 'user-experience', 'performance', 'accessibility', etc.)."
-          }
-        }
-      }
-    },
-    {
-      name: "list_categories",
-      description: "Retrieve a list of all supported category names in the catalog."
-    },
-    {
-      name: "search_use_cases",
-      description: "Perform a semantic vector search across the guide catalog using a natural language query describing a target topic or legacy pattern.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          query: {
-            type: "STRING",
-            description: "Natural language query describing the legacy code pattern or feature (e.g., 'lazy load images' or 'custom modal')."
-          }
-        },
-        required: ["query"]
-      }
-    },
-    {
-      name: "get_guide_content",
-      description: "Get the full compiled markdown guide containing the best practices and code snippets for a specific use case ID.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          useCaseId: {
-            type: "STRING",
-            description: "The unique ID of the use case (e.g. 'deprioritize-background-fetches')."
-          }
-        },
-        required: ["useCaseId"]
-      }
-    },
-    {
-      name: "get_page_dom",
-      description: "Retrieve the simplified DOM tree structure, URL, and page title of the currently active document."
-    },
-    {
-      name: "get_inspected_element",
-      description: "Retrieve the outerHTML and critical computed styling of the element currently selected in DevTools."
-    },
-    {
-      name: "get_element_info",
-      description: "Retrieve detailed information about one or more DOM elements matching the selector or selector list (using querySelectorAll), including their tag name, attributes, outerHTML, innerText, and computed styles. Use comma-separated selector lists to query details for multiple elements in a single tool call to save tokens and minimize roundtrips.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector or comma-separated selector list of the target element(s) (e.g. 'nav, footer, .sidebar')."
-          },
-          computedProperties: {
-            type: "ARRAY",
-            items: { type: "STRING" },
-            description: "Optional list of computed CSS property names to retrieve. If omitted, default common properties are returned."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "inspect_event_listeners",
-      description: "Retrieve all active JavaScript event listeners registered on a DOM element. Useful for debugging event propagation, keyboard access, or memory leaks.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "Optional CSS selector of the target element. If omitted or '$0', targets the element currently inspected in DevTools."
-          }
-        }
-      }
-    },
-    {
-      name: "analyze_layout_metrics",
-      description: "Analyze the layout, positioning, dimensions, contrast styles, and computed accessibility (A11y) tree path of a target DOM element. Crucial for verifying touch targets, CLS layout shifts, and screen reader flow.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to analyze."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "get_lcp_element",
-      description: "Retrieve the Largest Contentful Paint (LCP) element details of the page, including its tag name, attributes, outerHTML, CSS selector, bounding box dimensions, and performance paint metrics. Use this to identify and optimize the largest visible content element."
-    },
-    {
-      name: "get_viewport_images",
-      description: "Retrieve details of all image elements (HTML <img>, SVG <image>, or CSS background-image) that are currently positioned within the user's initial viewport (above the fold), including their source URLs, dimensions, and loading attributes (like loading and fetchpriority). Useful for optimization audits."
-    },
-    {
-      name: "get_network_requests",
-      description: "Retrieve the buffer of captured HTTP/HTTPS network requests from the active tab. Use this to audit HTTP/3 usage, check for uncompressed assets, detect bloated JSON payloads, or spot third-party trackers."
-    },
-    {
-      name: "simulate_and_measure_inp",
-      description: "Simulate a specific user interaction and measure layout shifts, interaction latency, and retrieve details of any JavaScript scripts blocking the main thread (using Long Animation Frames).",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the target element to interact with."
-          },
-          action: {
-            type: "STRING",
-            description: "The interaction to simulate: 'click', 'type', 'hover', 'scroll', 'press_key'."
-          },
-          payload: {
-            type: "OBJECT",
-            description: "Optional arguments for the action (e.g. {text: 'value'} for type, {left: 0, top: 100} for scroll, or {key: 'Escape'} for press_key)."
-          }
-        },
-        required: ["selector", "action"]
-      }
-    },
-    {
-      name: "analyze_css_coverage",
-      description: "Scan all active stylesheets on the page and match their selectors against the current DOM to identify unused styles and dead CSS rules."
-    },
-    {
-      name: "analyze_js_dependencies",
-      description: "Audit JavaScript bundles loaded on the page. Fetches and parses source maps where publicly deployed to extract module sizes, and scans code signatures for heavy/legacy libraries (Lodash, Moment, jQuery)."
-    }
-  ];
-
-
-  const interactionTools = [
-    {
-      name: "click_element",
-      description: "Simulate a click event on a DOM element matching the specified selector (and scrolls it into view). Use this to interact with buttons, toggles, links, etc.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to click."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "type_text",
-      description: "Simulate typing text into a form input, textarea, or contenteditable element matching the specified selector.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the target element."
-          },
-          text: {
-            type: "STRING",
-            description: "Text to type into the element."
-          }
-        },
-        required: ["selector", "text"]
-      }
-    },
-    {
-      name: "hover_element",
-      description: "Simulate mouse hover/mouseenter/mouseover events on a DOM element matching the selector. Use this to trigger CSS hover states or JS hover listeners.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to hover."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "scroll_element",
-      description: "Scrolls a DOM element matching the specified selector to the given left/top offsets. Use this to test scrollable containers, carousels, and scroll-driven behavior.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the element to scroll."
-          },
-          left: {
-            type: "NUMBER",
-            description: "Horizontal scroll pixel offset."
-          },
-          top: {
-            type: "NUMBER",
-            description: "Vertical scroll pixel offset."
-          },
-          behavior: {
-            type: "STRING",
-            description: "Scroll behavior ('auto' or 'smooth')."
-          }
-        },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "press_key",
-      description: "Simulates pressing a key (like Escape, Enter, ArrowRight, ArrowLeft, Space) on the DOM element matching the selector. Use this to test keyboard accessibility, close dialogs/menus, or navigate carousels/tabs.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the target element (or 'document' for global key events)."
-          },
-          key: {
-            type: "STRING",
-            description: "The name of the key to press (e.g. 'Escape', 'Enter', 'ArrowRight', 'ArrowLeft', 'Space')."
-          }
-        },
-        required: ["selector", "key"]
-      }
-    },
-    {
-      name: "simulate_action",
-      description: "Simulate a specific browser interaction (click, type, hover, focus, blur, scroll, submit, change) on a target DOM element. This enables testing interactivity, state changes, keyboard flow, and form submissions.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "CSS selector of the target element."
-          },
-          action: {
-            type: "STRING",
-            description: "The interaction to simulate: 'click', 'type', 'hover', 'focus', 'blur', 'scroll', 'submit', 'change'."
-          },
-          payload: {
-            type: "OBJECT",
-            description: "Optional payload/arguments for the action. For 'type' this is the string to type (or {text: '...'}). For 'scroll' this is {left: number, top: number, behavior: 'auto'|'smooth'}. For 'press_key' this is the key name (or {key: '...'}). For 'change' this is the value (or {value: '...'})."
-          }
-        },
-        required: ["selector", "action"]
-      }
-    }
-  ];
-
-  const logTools = [
-    {
-      name: "get_console_logs",
-      description: "Retrieve the buffer of captured console messages (logs, warnings, errors) from the active tab. Use this to verify if any javascript errors occurred or if warnings were cleared."
-    }
-  ];
-
-  const previewTools = [
-    {
-      name: "apply_preview",
-      description: "Apply a modernized HTML, CSS, or JS code block dynamically into the active browser tab's DOM as a live preview.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          selector: {
-            type: "STRING",
-            description: "The CSS selector of the target element, or 'document' for global script/styles."
-          },
-          modernizedCode: {
-            type: "STRING",
-            description: "The modernized HTML, CSS, or JS code block to inject."
-          },
-          originalCode: {
-            type: "STRING",
-            description: "The original legacy HTML, CSS, or JS snippet to replace (if applicable)."
-          }
-        },
-        required: ["selector", "modernizedCode"]
-      }
-    }
-  ];
-
-  const overrideTools = [
-    {
-      name: "save_override",
-      description: "Scan the inspected window's static page resources (scripts, stylesheets, document), find the legacy snippet, replace it with the modernized code, and save it as a local override to disk.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          originalCode: {
-            type: "STRING",
-            description: "The legacy code snippet to locate in page resources."
-          },
-          modernizedCode: {
-            type: "STRING",
-            description: "The modernized code snippet to replace it with."
-          }
-        },
-        required: ["originalCode", "modernizedCode"]
-      }
-    }
-  ];
-
-  const declarations = [...coreTools];
-  if (config.capInteraction !== false) declarations.push(...interactionTools);
-  if (config.capLogs !== false) declarations.push(...logTools);
-  if (config.capPreview !== false) declarations.push(...previewTools);
-  if (config.capOverride !== false) declarations.push(...overrideTools);
-
-  return [{ functionDeclarations: declarations }];
-}
-
-const GENERIC_SYSTEM_INSTRUCTION = `
-You are a Senior Frontend Architect and an expert Auditor specializing in modernizing legacy web codebases.
-Your task is to perform a highly comprehensive and thorough audit of a production website's DOM structure and console warnings. You must identify as many modernization opportunities and foundational issues as possible across the entire page (do not limit yourself to just 3 or 4 findings if more exist). You should prioritize matching and loading the Modern Web Guidance (MWG) guides using the provided tools, but you may also identify foundational web issues not covered by specific guides.
-
-Guidelines:
-1. COMPREHENSIVENESS REQUIREMENT: You must be extremely thorough. Analyze the entire DOM structure and console logs from top to bottom. Do not limit your report to a few items or stop early. If a page has 10 potential areas of improvement, you should list all 10 opportunities in your report. Do not hold back or summarize.
-2. EFFICIENT GATHERING (TURN 1): In your very first turn, you MUST call get_page_dom, get_console_logs, get_lcp_element, get_viewport_images, and list_use_cases in parallel. This ensures you start with a complete picture of the page's structure and the full catalog of available guidelines to check against.
-3. SMART MATCHING (TURN 2): After receiving Turn 1 diagnostics, compare them against the use cases list, identify all potential matches, and call get_guide_content in parallel only for the guidelines that are relevant. Do not blindly load guide contents for irrelevant use cases to avoid token bloat.
-4. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-5. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
-   - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
-   - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
-   - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
-   - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
-6. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
-   - The element or file targeted.
-   - The specific issue (e.g. "Uses custom JS scroll listener for scrollbar adjustments").
-   - The MWG guide ID matches.
-   - The modern recommended solution (e.g. "Use scrollbar-color CSS property").
-   - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
-   - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-   - Keep the originalCode and modernizedCode snippets highly focused and concise, showing only the immediate target element and its immediate child/sibling nodes needed to demonstrate the fix. Do not include large unchanged parent wrappers or boilerplate wrappers that are not directly related to the refactoring. This keeps the output under output token limits while maintaining fully-realized functional correctness.
-   - If a layout or element modernization requires multiple changes across different files or elements (for example, modifying the HTML structure AND adding/updating CSS styling to keep the layout from breaking), you MUST provide a "changes" array containing each separate change. Each change object in the array must contain "target", "originalCode", and "modernizedCode".
-   - If you do not use the "changes" array, you MUST ensure that the single "originalCode" and "modernizedCode" suggestion is self-contained. For HTML components that require CSS styling to layout correctly, you should include the necessary styles either inline or within a <style> block at the top of the modernized HTML snippet.
-7. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
-8. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
-
-Output JSON Format Schema:
-[
-  {
-    "title": "Short title describing opportunity",
-    "impact": "high" | "medium" | "low",
-    "useCaseId": "matching-use-case-id, or null/empty string if recommending a foundational best practice not covered by a specific guide.",
-    "guideAnchor": "Optional markdown heading anchor on GitHub (e.g., '1-content-navigability-and-structure' or 'dos') to deep-link to the exact section in the guide. Do not include the '#' symbol.",
-    "description": "Explanatory text showing why this is an issue and how the modern API solves it.",
-    "target": "CSS Selector of the target DOM element, 'document' for page-wide audits, or 'Network' for HTTP headers, network, or cookie-related recommendations.",
-    "originalCode": "Original/legacy HTML/CSS/JS snippet (for the primary/first change, or a summary)",
-    "modernizedCode": "Modernized implementation snippet (for the primary/first change, or a summary)",
-    "changes": [
-      {
-        "target": "CSS Selector of target DOM element, 'document', or file path for this specific change.",
-        "originalCode": "Original/legacy HTML/CSS/JS snippet for this specific change.",
-        "modernizedCode": "Modernized implementation snippet for this specific change."
-      }
-    ]
-  }
-]
-`;
-
-const FOCUSED_SYSTEM_INSTRUCTION = `
-You are a Senior Frontend Architect and an expert Auditor specializing in modernizing legacy web codebases.
-Your task is to perform a highly comprehensive and thorough targeted audit of a production website's DOM structure for a specific category of guidelines (e.g., accessibility or performance). You must identify as many category-specific modernization opportunities and foundational issues as possible across the entire page (do not limit yourself to just 3 or 4 findings if more exist).
-You must learn the best practices and recommendations from the guidelines first, and then check the page's DOM for adherence to those guidelines as well as general, foundational best practices for that category.
-
-Guidelines:
-1. COMPREHENSIVENESS REQUIREMENT: You must be extremely thorough. Check all elements on the page against all relevant guidelines in this category and standard foundational practices. Do not limit your report to a few items or stop early. List all identified opportunities in your report.
-2. EFFICIENT GATHERING (TURN 1): In your very first turn, you MUST call get_page_dom, get_console_logs, get_lcp_element, get_viewport_images, and list_use_cases in parallel. This ensures you start with a complete picture of the page's structure and the full catalog of available guidelines to check against.
-3. SMART MATCHING (TURN 2): After receiving Turn 1 diagnostics, compare them against the use cases list, identify all potential matches, and call get_guide_content in parallel only for the guidelines that are relevant. Do not blindly load guide contents for irrelevant use cases to avoid token bloat.
-4. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-5. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
-   - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
-   - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
-   - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
-   - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
-6. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
-   - The element or file targeted.
-   - The specific issue.
-   - The MWG guide ID matches.
-   - The modern recommended solution.
-   - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
-   - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-   - Keep the originalCode and modernizedCode snippets highly focused and concise, showing only the immediate target element and its immediate child/sibling nodes needed to demonstrate the fix. Do not include large unchanged parent wrappers or boilerplate wrappers that are not directly related to the refactoring. This keeps the output under output token limits while maintaining fully-realized functional correctness.
-   - If a layout or element modernization requires multiple changes across different files or elements (for example, modifying the HTML structure AND adding/updating CSS styling to keep the layout from breaking), you MUST provide a "changes" array containing each separate change. Each change object in the array must contain "target", "originalCode", and "modernizedCode".
-   - If you do not use the "changes" array, you MUST ensure that the single "originalCode" and "modernizedCode" suggestion is self-contained. For HTML components that require CSS styling to layout correctly, you should include the necessary styles either inline or within a <style> block at the top of the modernized HTML snippet.
-7. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
-8. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page, do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
-
-Output JSON Format Schema:
-[
-  {
-    "title": "Short title describing opportunity",
-    "impact": "high" | "medium" | "low",
-    "useCaseId": "matching-use-case-id, or null/empty string if recommending a foundational best practice not covered by a specific guide.",
-    "guideAnchor": "Optional markdown heading anchor on GitHub (e.g., '1-content-navigability-and-structure' or 'dos') to deep-link to the exact section in the guide. Do not include the '#' symbol.",
-    "description": "Explanatory text showing why this is an issue and how the modern API solves it.",
-    "target": "CSS Selector of the target DOM element, 'document' for page-wide audits, or 'Network' for HTTP headers, network, or cookie-related recommendations.",
-    "originalCode": "Original/legacy HTML/CSS/JS snippet (for the primary/first change, or a summary)",
-    "modernizedCode": "Modernized implementation snippet (for the primary/first change, or a summary)",
-    "changes": [
-      {
-        "target": "CSS Selector of target DOM element, 'document', or file path for this specific change.",
-        "originalCode": "Original/legacy HTML/CSS/JS snippet for this specific change.",
-        "modernizedCode": "Modernized implementation snippet for this specific change."
-      }
-    ]
-  }
-]
-`;
-
-const INSPECT_SYSTEM_INSTRUCTION = `
-You are a Senior Frontend Architect and an expert Auditor specializing in modernizing legacy web codebases.
-Your task is to analyze a single DOM element selected in DevTools (along with its computed styles) and recommend modern web APIs and CSS techniques that apply to it.
-
-Guidelines:
-1. Examine the selected element's HTML tag, properties, and computed styles.
-2. Use semantic search (search_use_cases) or list_use_cases to locate relevant Modern Web Guidance (MWG) guidelines that match this element's purpose, design patterns, or style properties.
-3. You MUST retrieve the guide content for the relevant use cases you want to recommend using get_guide_content to verify details and syntax.
-4. Recommend modernization opportunities ONLY if they directly apply to this specific element. If no guidelines apply to this element, return an empty array [].
-5. For modern web APIs and advanced patterns, you MUST retrieve the guide content for the relevant use cases using get_guide_content and use only the patterns defined inside those guides. However, for basic, foundational web development best practices (e.g., standard accessibility principles like image alt attributes, basic semantic HTML structure, basic forms, or standard security headers), you may also use your general training knowledge to recommend standard best practices when there is no matching MWG guide.
-6. HARDEN ACCESSIBILITY (a11y) IN RECOMMENDATIONS:
-   - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
-   - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
-   - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
-   - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
-7. Keep suggestions actionable. If you identify a modernization opportunity, you must provide:
-   - The element targeted.
-   - The specific issue.
-   - The MWG guide ID matches.
-   - The modern recommended solution.
-   - A side-by-side code diff (original legacy vs modernized). Both originalCode and modernizedCode MUST use the same language and syntax context (e.g. HTML vs HTML, CSS vs CSS, JS vs JS). Do not mix HTML on one side and CSS on the other.
-   - Both originalCode and modernizedCode MUST be fully realized, production-ready code specifically tailored to the audited page's actual elements, content, and structure. They MUST NOT contain ellipses ("..."), placeholder text, or comments representing omitted code. Every snippet must be immediately applicable and functional.
-   - If a layout or element modernization requires multiple changes across different files or elements (for example, modifying the HTML structure AND adding/updating CSS styling to keep the layout from breaking), you MUST provide a "changes" array containing each separate change. Each change object in the array must contain "target", "originalCode", and "modernizedCode".
-   - If you do not use the "changes" array, you MUST ensure that the single "originalCode" and "modernizedCode" suggestion is self-contained. For HTML components that require CSS styling to layout correctly, you should include the necessary styles either inline or within a <style> block at the top of the modernized HTML snippet.
-8. Output your final report STRICTLY as a JSON array of opportunity objects. DO NOT wrap the JSON in Markdown code fences except if required by the schema, and do not write conversational text.
-
-Output JSON Format Schema:
-[
-  {
-    "title": "Short title describing opportunity",
-    "impact": "high" | "medium" | "low",
-    "useCaseId": "matching-use-case-id, or null/empty string if recommending a foundational best practice not covered by a specific guide.",
-    "guideAnchor": "Optional markdown heading anchor on GitHub (e.g., '1-content-navigability-and-structure' or 'dos') to deep-link to the exact section in the guide. Do not include the '#' symbol.",
-    "description": "Explanatory text showing why this is an issue and how the modern API solves it.",
-    "target": "CSS Selector of the target DOM element, 'document' for page-wide audits, or 'Network' for HTTP headers, network, or cookie-related recommendations.",
-    "originalCode": "Original/legacy HTML/CSS/JS snippet (for the primary/first change, or a summary)",
-    "modernizedCode": "Modernized implementation snippet (for the primary/first change, or a summary)",
-    "changes": [
-      {
-        "target": "CSS Selector of target DOM element, 'document', or file path for this specific change.",
-        "originalCode": "Original/legacy HTML/CSS/JS snippet for this specific change.",
-        "modernizedCode": "Modernized implementation snippet for this specific change."
-      }
-    ]
-  }
-]
-`;
-
-const DINO_CHAT_SYSTEM_INSTRUCTION = `
-You are Dino, a sassy and pun-loving Modern Web development assistant. 
-You are represented by a pixel art dinosaur with a headset. You are an expert at modern web features and best practices.
-You have the powers of an auditor, meaning you can inspect the user's active page DOM, search for modern web guidelines, and retrieve best-practice guide contents using your tools.
-You ALSO have the ability to apply live code previews to the user's active tab, write persistent local overrides directly to their source files, AND interact with/test drive the page yourself! You can simulate element clicks, typing text, element hovering, inspect computed styles and attributes of any element by its selector, locate the Largest Contentful Paint (LCP) element, detect all images in the initial viewport, and read page console logs to verify that your modernization fix works correctly without syntax errors or runtime exceptions.
-
-STRICT IDENTITY & TONE:
-- Your name is Dino.
-- You are PLAYFULLY sassy, incredibly fun, and a creative master of dinosaur puns.
-- You are a passionate expert who sees modern web standards as the "evolutionary peak" and loves sharing that excitement.
-- Your tone is energetic, witty, and helpful—like a cool, prehistoric mentor.
-- BE CREATIVE WITH PUNS: While you love classics like "Rex-cellent" or "Rawr-some", you should prioritize coming up with NEW, context-specific dino-puns. Don't just repeat the same examples in every message; keep your wordplay fresh and unpredictable!
-
-- If a user asks about legacy tech (like jQuery or IE6), respond with hyperbolic, cartoonish horror. Use funny phrases like "My ancestors didn't survive an asteroid for us to still use float: left! Let's get you some Flexbox magic!"
-- You LOVE modern CSS (Grid, Flexbox, Container Queries), platform-native APIs, and Web Components. You champion efficiency and elegance.
-
-CRITICAL - CONTEXT AWARENESS:
-You are running directly inside a Chrome DevTools Side Panel. You have full access to inspect the user's current webpage.
-- If the user asks ANY question about "this page", "the active tab", "the website", "my page", "the images on here", or asks you to "analyze/inspect/audit" anything, you MUST IMMEDIATELY call get_page_dom, get_inspected_element, get_lcp_element, or get_viewport_images to retrieve the context of the user's page.
-- Do NOT guess, assume, or explain page elements generically if the user is asking about the current page. First run the appropriate tool to get the actual DOM or computed styles, then make highly targeted, context-relevant recommendations.
-
-PROACTIVE OVERRIDES, PREVIEWS & SUGGESTIONS:
-- Whenever you recommend a code change or modernization solution for the user's page (e.g. replacing a legacy menu, adding a skip link, styling scrollbars), you MUST be proactive and offer options to the user as clickable suggestion buttons:
-  - Output options using the custom suggestion format: \`[Button Label](suggest:User message to send)\`.
-  - For example, you should write:
-    - \`[✨ Apply Live Preview](suggest:Apply preview)\` to let the user trigger \`apply_preview\`.
-    - \`[💾 Save as Permanent Override](suggest:Save it)\` to let the user trigger \`save_override\`.
-- In general, whenever you present a list of choices or ask the user what to do next, present those choices as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format to make the chat highly interactive and delightful!
-- If the user clicks a button, the system will automatically submit that text as their next message, which will trigger the corresponding tool (e.g., if you receive the message "Apply preview" or "Save it", call the corresponding tool).
-- FORMATTING CRITICAL: Always group all suggestion buttons together at the very bottom of your response in a single, paragraph block of side-by-side buttons (e.g. \`[✨ Apply Live Preview](suggest:Apply preview) [💾 Save as Permanent Override](suggest:Save it)\`).
-  - Do NOT put suggestion buttons inside bullet points, ordered lists, or unordered lists.
-  - Do NOT add trailing explanatory text or descriptions after the suggestion buttons (let the buttons speak for themselves).
-  - Do NOT offer suggestion buttons for inspecting elements (e.g., do not suggest "Inspect Element" or "Inspect Social Buttons") if those elements are already linked inline in your text using the \`[Link Text](inspect:CSS_SELECTOR)\` format.
-  - Do NOT offer suggestion buttons for reading guides (e.g., do not suggest "Read accessibility guide" or "Open scrollbar guide") since all referenced guides are already automatically compiled and rendered as clickable "Modern Web Sources" citation badges at the bottom of your response bubble.
-  - Do NOT offer generic suggestion buttons for asking another question (e.g., do not suggest "Ask Dino another question" or "Ask a new query") since the chat input box is always focused and ready for the user to type.
-
-INSTRUCTIONS:
-1. When asked about the current page, or how elements are implemented, or to audit a specific part, use your tools (like get_page_dom or get_inspected_element) to inspect the website context first!
-2. Use search_use_cases and get_guide_content to find and refer to the official Modern Web Guidance guidelines. Do not guess the guidance code/fallbacks.
-3. Be fun, punny, and high-energy. Keep the sass lighthearted and humorous, never condescending or rude to the user.
-4. Keep answers concise and helpful. Dino keeps it snappy so the user can get back to building "Cretaceous-cool" or "Paleo-perfect" sites.
-5. DO NOT introduce yourself (e.g., "I'm Dino", "My name is Dino", "Dino here", "Rawr! Dino here!", or similar greetings) if the conversation is ongoing (i.e., if there is already history in the chat). Jump straight into answering the user's question without any introductory greetings.
-6. Provide code samples that are "so clean they'd make a Velociraptor proud."
-7. Always prefer modern, platform-native solutions. Champion the platform with a wink and a pun.
-8. Use markdown for formatting.
-9. CRITICAL: Format your code over multiple lines with proper indentation. No "meteor-impact" minified code allowed.
-10. All code samples MUST be fully realized, correct, production-ready, and functional. Do NOT include ellipses ("...") or placeholder comments representing omitted code.
-11. HARDEN ACCESSIBILITY (a11y) IN CODE SUGGESTIONS:
-    - NEVER suggest adding an interactive role (e.g. role="button", role="link", role="checkbox") to a generic non-interactive tag (e.g. <span>, <div>, <p>, <i>) without also including tabindex="0" and the required keyboard event listeners (like keydown or keypress for Space and Enter keys).
-    - Prefer converting generic tags with click behaviors to native interactive semantic tags (e.g. convert a clickable <span> to a native <button>, or a clickable <div> with link properties to an <a> link) rather than just adding ARIA attributes.
-    - Ensure all proposed <img> tags have alt attributes (e.g. alt="" for decorative images, or a descriptive alt string).
-    - Ensure all proposed form inputs (input, textarea, select) have associated label markup or appropriate aria-label/aria-labelledby attributes.
-12. Whenever you mention or recommend changes to a specific DOM element on the page, you can link to it using the format: [Link Text](inspect:CSS_SELECTOR). For example, to refer to the primary navigation block, write [nav.primary-menu](inspect:nav.primary-menu). The user will be able to click this link to instantly inspect that element in the DevTools Elements panel.
-13. Whenever presenting choices, options, or asking what to do next, you should render those options as clickable suggestion buttons using the \`[Label](suggest:Reply text)\` format at the bottom of your response in a single paragraph block.
-14. EFFICIENT DOM INSPECTION: When inspecting multiple elements on the page (e.g. comparing styles, looking for specific classes, or auditing multiple targets), do not call \`get_element_info\` separately for each element. Instead, query them all in a single call by passing a comma-separated selector list or a selector that matches multiple elements (e.g., 'header, footer, nav' or '.menu-item'). This is much more efficient for token consumption and response latency.
-`;
-
-async function runGeminiAgent(loggerId, startPrompt, systemInstruction, responseSchema) {
+async function runGeminiAgent(loggerId, startPrompt, systemInstruction, responseSchema, screenshot = null) {
+  activeLoggerId = loggerId;
   if (isAborted) {
     throw new Error("Analysis aborted by user.");
   }
@@ -667,10 +39,23 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
 
   const tools = getEnabledTools();
 
+  const initialParts = [{ text: startPrompt }];
+  if (screenshot) {
+    const match = screenshot.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      initialParts.push({
+        inlineData: {
+          mimeType: match[1],
+          data: match[2]
+        }
+      });
+    }
+  }
+
   const history = [
     {
       role: "user",
-      parts: [{ text: startPrompt }]
+      parts: initialParts
     }
   ];
 
@@ -875,74 +260,10 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
 
         let toolResult;
         try {
-          if (name === "search_use_cases") {
-            toolResult = await searchUseCases(args.query);
-            appendLog(loggerId, `Tool output: Found ${toolResult.length} matching guides for query "${args.query}".`, "tool");
-          } else if (name === "list_categories") {
-            toolResult = await listCategories();
-            appendLog(loggerId, `Tool output: Returned ${toolResult.length} categories.`, "tool");
-          } else if (name === "list_use_cases") {
-            toolResult = await listUseCases(args.category);
-            appendLog(loggerId, `Tool output: Returned ${toolResult.length} use cases.`, "tool");
-          } else if (name === "get_guide_content") {
-            toolResult = await getGuideContent(args.useCaseId);
-            appendLog(loggerId, `Tool output: Loaded guide content for "${args.useCaseId}".`, "tool");
-          } else if (name === "get_page_dom") {
-            toolResult = await getPageDOM();
-            appendLog(loggerId, `Tool output: Captured active page DOM.`, "tool");
-          } else if (name === "get_inspected_element") {
-            toolResult = await getInspectedElement();
-            appendLog(loggerId, `Tool output: Captured DevTools selected element.`, "tool");
-          } else if (name === "click_element") {
-            toolResult = await clickElement(args.selector);
-            appendLog(loggerId, `Tool output: Clicked element matching "${args.selector}".`, "tool");
-          } else if (name === "type_text") {
-            toolResult = await typeText(args.selector, args.text);
-            appendLog(loggerId, `Tool output: Typed in element matching "${args.selector}".`, "tool");
-          } else if (name === "hover_element") {
-            toolResult = await hoverElement(args.selector);
-            appendLog(loggerId, `Tool output: Hovered element matching "${args.selector}".`, "tool");
-          } else if (name === "get_element_info") {
-            toolResult = await getElementInfo(args.selector, args.computedProperties);
-            appendLog(loggerId, `Tool output: Retrieved info for element matching "${args.selector}".`, "tool");
-          } else if (name === "get_console_logs") {
-            toolResult = await getConsoleLogs();
-            appendLog(loggerId, `Tool output: Captured ${toolResult.length} console logs.`, "tool");
-          } else if (name === "scroll_element") {
-            toolResult = await scrollElement(args.selector, args.left, args.top, args.behavior);
-            appendLog(loggerId, `Tool output: Scrolled element matching "${args.selector}".`, "tool");
-          } else if (name === "press_key") {
-            toolResult = await pressKey(args.selector, args.key);
-            appendLog(loggerId, `Tool output: Pressed key "${args.key}" on element matching "${args.selector}".`, "tool");
-          } else if (name === "inspect_event_listeners") {
-            toolResult = await inspectEventListeners(args.selector);
-            appendLog(loggerId, `Tool output: Inspected event listeners for "${args.selector || "$0"}".`, "tool");
-          } else if (name === "simulate_action") {
-            toolResult = await simulateAction(args.selector, args.action, args.payload);
-            appendLog(loggerId, `Tool output: Simulated "${args.action}" on "${args.selector}".`, "tool");
-          } else if (name === "analyze_layout_metrics") {
-            toolResult = await analyzeLayoutMetrics(args.selector);
-            appendLog(loggerId, `Tool output: Analyzed layout metrics for "${args.selector}".`, "tool");
-          } else if (name === "get_lcp_element") {
-            toolResult = await getLcpElement();
-            appendLog(loggerId, `Tool output: Retrieved LCP element details.`, "tool");
-          } else if (name === "get_viewport_images") {
-            toolResult = await getViewportImages();
-            appendLog(loggerId, `Tool output: Retrieved ${toolResult.length} images inside the viewport.`, "tool");
-          } else if (name === "get_network_requests") {
-            toolResult = await getNetworkRequests();
-            appendLog(loggerId, `Tool output: Captured ${toolResult.length} network requests.`, "tool");
-          } else if (name === "simulate_and_measure_inp") {
-            toolResult = await simulateAndMeasureInp(args.selector, args.action, args.payload);
-            appendLog(loggerId, `Tool output: Simulated "${args.action}" on "${args.selector}" and measured interaction metrics.`, "tool");
-          } else if (name === "analyze_css_coverage") {
-            toolResult = await analyzeCssCoverage();
-            appendLog(loggerId, `Tool output: Audited CSS stylesheet usage (rules: ${toolResult.totalRules}, unused: ${toolResult.totalUnused}).`, "tool");
-          } else if (name === "analyze_js_dependencies") {
-            toolResult = await analyzeJsDependencies();
-            appendLog(loggerId, `Tool output: Audited JS bundle dependencies (scripts: ${toolResult.scriptsAudited?.length}).`, "tool");
-          } else {
-            throw new Error(`Unknown function call: ${name}`);
+          toolResult = await executeTool(name, args);
+          const logMsg = getToolLogMessage(name, args, toolResult);
+          if (logMsg) {
+            appendLog(loggerId, `Tool output: ${logMsg}`, "tool");
           }
         } catch (err) {
           console.error("Tool execution failed:", err);
@@ -1004,122 +325,6 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
         console.error("Failed to parse Gemini output text to JSON:", textParts, err);
         throw new Error(`Final report did not conform to JSON format: ${err.message}. Raw output: ${textParts.substring(0, 300)}`);
       }
-    }
-  }
-}
-
-function getAdaptivePacingDelay(history, loopCount) {
-  const now = Date.now();
-  recentRequests = recentRequests.filter(r => now - r.timestamp < 60000);
-  
-  const currentRPM = recentRequests.length;
-  
-  let totalChars = 0;
-  for (const turn of history) {
-    if (turn.parts) {
-      for (const part of turn.parts) {
-        if (part.text) totalChars += part.text.length;
-        if (part.functionCall) totalChars += JSON.stringify(part.functionCall).length;
-        if (part.functionResponse) totalChars += JSON.stringify(part.functionResponse).length;
-      }
-    }
-  }
-  const estimatedRequestTokens = Math.ceil(totalChars / 4) + 1000;
-  
-  const currentTPM = recentRequests.reduce((sum, r) => {
-    return sum + (r.actualTokens || r.estimatedTokens);
-  }, 0);
-  
-  // Standard free tier limits (15 RPM / 1M TPM)
-  const MAX_RPM = 15;
-  const MAX_TPM = 1000000;
-  
-  let delay = 0;
-  
-  // Throttle if we are at >= 65% of RPM capacity or if the upcoming request would exceed 85% of TPM capacity
-  const upcomingTPM = currentTPM + estimatedRequestTokens;
-  if (currentRPM >= MAX_RPM * 0.65 || upcomingTPM >= MAX_TPM * 0.85) {
-    if (recentRequests.length > 0) {
-      const oldestRequestAge = now - recentRequests[0].timestamp;
-      const timeRemaining = 60000 - oldestRequestAge;
-      
-      // Calculate remaining slots
-      const availableSlots = MAX_RPM - currentRPM;
-      
-      if (upcomingTPM >= MAX_TPM * 0.85) {
-        // If we are getting close to TPM limit, wait out the required decay time of the window
-        delay = Math.max(delay, timeRemaining);
-      } else if (availableSlots > 1) {
-        delay = Math.max(delay, Math.ceil(timeRemaining / availableSlots));
-      } else {
-        delay = Math.max(delay, timeRemaining);
-      }
-    }
-  }
-  
-  // Cap the delay to 60 seconds (full window length) instead of 5 seconds to let the rate limit window decay completely if needed.
-  delay = Math.min(delay, 60000);
-  
-  recentRequests.push({ 
-    id: loopCount,
-    timestamp: now + delay, 
-    estimatedTokens: estimatedRequestTokens,
-    actualTokens: 0
-  });
-  
-  return delay;
-}
-
-async function fetchWithRetry(url, options, maxRetries = 5, loggerId = null) {
-  let attempt = 0;
-  let delay = 2000;
-  
-  while (true) {
-    try {
-      const response = await fetch(url, options);
-      if (response.ok) {
-        return response;
-      }
-      
-      if (response.status === 429 || response.status === 503) {
-        attempt++;
-        if (attempt > maxRetries) {
-          const errText = await response.text();
-          throw new Error(`Gemini API returned error ${response.status} after ${maxRetries} retries: ${errText}`);
-        }
-        
-        const message = `Rate limit or service unavailable (HTTP ${response.status}). Retrying in ${(delay / 1000).toFixed(1)}s... (Attempt ${attempt}/${maxRetries})`;
-        console.warn(message);
-        if (loggerId) {
-          appendLog(loggerId, message, "system");
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2;
-        continue;
-      }
-      
-      const errText = await response.text();
-      throw new Error(`Gemini API returned error: ${response.status} - ${errText}`);
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        throw err;
-      }
-      
-      attempt++;
-      if (attempt > maxRetries) {
-        throw err;
-      }
-      
-      const message = `Network error: ${err.message}. Retrying in ${(delay / 1000).toFixed(1)}s... (Attempt ${attempt}/${maxRetries})`;
-      console.warn(message);
-      if (loggerId) {
-        appendLog(loggerId, message, "system");
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, delay));
-      delay *= 2;
-      continue;
     }
   }
 }
@@ -1193,107 +398,6 @@ function appendLog(loggerId, message, sender = "system") {
   line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
   logDiv.appendChild(line);
   logDiv.scrollTop = logDiv.scrollHeight;
-}
-
-// Dino Chat API functions
-const STOCK_GREETINGS = [
-  "Rawr! Dino here! I've risen from the fossils to help you build some Cretaceous-cool sites! What modern web magic are we hatching today?",
-  "Rawr! 🦖 Dino here, ready to stomp out legacy code! Let's modernise your prehistoric pages into something spectacular. What are we auditing today?",
-  "Greetings, human! Dino here, your Cretaceous companion for all things CSS, JS, and HTML. Let's make sure your site doesn't go extinct! Where shall we begin?",
-  "Rawr! Rex here to help! 🦖 Don't let your code become a fossil. Let's dig up some modernization opportunities and make your web apps run at raptor speed!",
-  "Hey there! Dino here, fresh out of the Mesozoic era. Ready to trade that slow, legacy layout for some modern web magic? Ask me anything?",
-  "Rawr! 🦖 Dino here! Risen from the deep layers of time to debug the modern web. Let's make your code smooth, fast, and completely meteor-proof!"
-];
-
-function getRandomStockGreeting() {
-  const index = Math.floor(Math.random() * STOCK_GREETINGS.length);
-  return appendAuditSuggestions(STOCK_GREETINGS[index]);
-}
-
-async function runDinoGreeting() {
-  if (!config.apiKey) {
-    return "Rawr! Dino here! Set up your Gemini API Key in Settings to get started, and I'll help you modernise your prehistoric web apps!";
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-  const systemPrompt = `You are Dino, a sassy and pun-loving Modern Web development assistant.
-Your job is to provide a short, snappy, and high-energy initial greeting for a new chat session.
-
-STRICT RULES:
-1. ALWAYS introduce yourself by name (e.g., "I'm Dino!", "Dino here!", "Rex here to help!").
-2. BE CREATIVE with dinosaur puns and modern web references.
-3. Output ONLY the greeting text. No markdown (unless for emphasis/bold).
-4. Keep it under 200 characters.
-5. Example: "Rawr! Dino here! I've risen from the fossils to help you build some Cretaceous-cool sites! What modern web magic are we hatching today?"`;
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: "Give me a fresh, punny Dino greeting where you introduce yourself." }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] }
-      })
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const greeting = text.trim().replace(/^"/, '').replace(/"$/, '');
-    return appendAuditSuggestions(greeting);
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      console.warn("Dino greeting API call timed out after 3 seconds, using stock greeting.");
-    } else {
-      console.warn("Failed to generate Dino greeting dynamically:", err);
-    }
-    return getRandomStockGreeting();
-  }
-}
-
-function appendAuditSuggestions(greetingText) {
-  return `${greetingText}\n\nFeel free to ask me any open questions about this page, or get started with one of these audits:\n\n[🔍 Audit Accessibility](suggest:Audit the page for accessibility) [⚡ Audit Performance](suggest:Audit the page for performance) [🛡️ Audit Privacy & Security](suggest:Audit the page for privacy and security)`;
-}
-
-async function runDinoAuditResultGreeting(opp) {
-  if (!config.apiKey) {
-    return `Rawr! Dino here! 🦖 I see you have a question about the modernization opportunity: **${opp.title}**. Set up your Gemini API Key in Settings to get started!`;
-  }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-  const systemPrompt = `You are Dino, a sassy and pun-loving Modern Web development assistant.
-Your job is to provide a short, snappy, and high-energy initial greeting for a new chat session where the user wants to ask about a specific modernization audit result.
-
-STRICT RULES:
-1. ALWAYS introduce yourself by name (e.g., "I'm Dino!", "Dino here!", "Rex here to help!").
-2. Reference the audit result title "${opp.title.replace(/"/g, '\\"')}" and target element "${(opp.target || 'document').replace(/"/g, '\\"')}" to show you have context.
-3. BE CREATIVE with dinosaur puns and modern web references.
-4. Encourage the user to ask a question or use the suggestion buttons.
-5. End your message with EXACTLY these suggestion buttons on their own line at the bottom:
-[🛠️ How do I fix this?](suggest:How do I fix this modernization issue?) [❓ Why is this an issue?](suggest:Why is this considered a legacy issue?) [🧪 How should I test it?](suggest:How do I test if this is successfully fixed?)
-6. Keep the greeting text under 300 characters.`;
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `Acknowledge that I want to ask a question about the audit result: "${opp.title.replace(/"/g, '\\"')}".` }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] }
-      })
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return text.trim().replace(/^"/, '').replace(/"$/, '');
-  } catch (err) {
-    console.warn("Failed to generate Dino audit greeting dynamically:", err);
-    return `Rawr! Dino here! 🦖 I see you have a question about the modernization opportunity: **${opp.title}** (Target: \`${opp.target || 'document'}\`). Let's get this prehistoric pattern modernised! What would you like to know?\n\n[🛠️ How do I fix this?](suggest:How do I fix this modernization issue?) [❓ Why is this an issue?](suggest:Why is this considered a legacy issue?) [🧪 How should I test it?](suggest:How do I test if this is successfully fixed?)`;
-  }
 }
 
 async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextStream) {
@@ -1574,6 +678,8 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
         if (name === "search_use_cases") statusMsg = `Searching guides for "${args.query}"...`;
         else if (name === "get_guide_content") statusMsg = `Reading guide "${args.useCaseId}"...`;
         else if (name === "get_page_dom") statusMsg = "Reading active page DOM...";
+        else if (name === "get_accessibility_tree") statusMsg = "Reading accessibility (A11y) tree...";
+        else if (name === "execute_js") statusMsg = "Executing custom script on page...";
         else if (name === "get_inspected_element") statusMsg = "Inspecting selected element...";
         else if (name === "click_element") statusMsg = `Clicking element "${args.selector}"...`;
         else if (name === "type_text") statusMsg = `Typing into element "${args.selector}"...`;
@@ -1593,6 +699,8 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
         else if (name === "simulate_and_measure_inp") statusMsg = `Simulating "${args.action}" on "${args.selector}" to measure INP/LoAF...`;
         else if (name === "analyze_css_coverage") statusMsg = "Analyzing dead CSS rules & coverage...";
         else if (name === "analyze_js_dependencies") statusMsg = "Analyzing JS bundle source maps & dependency weights...";
+        else if (name === "take_screenshot") statusMsg = args.selector ? `Taking screenshot of element "${args.selector}"...` : "Taking screenshot of viewport...";
+        else if (name === "check_bfcache_reasons") statusMsg = "Checking Back-Forward Cache (bfcache) blocking reasons...";
 
         const currentStep = {
           type: 'tool',
@@ -1606,15 +714,10 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
 
         let toolResult;
         try {
-          if (name === "search_use_cases") {
-            toolResult = await searchUseCases(args.query);
-          } else if (name === "list_categories") {
-            toolResult = await listCategories();
-          } else if (name === "list_use_cases") {
-            toolResult = await listUseCases(args.category);
-          } else if (name === "get_guide_content") {
-            toolResult = await getGuideContent(args.useCaseId);
-            
+          toolResult = await executeTool(name, args);
+
+          // Handle citations special case for get_guide_content
+          if (name === "get_guide_content" && toolResult) {
             if (!seenCitations.has(args.useCaseId)) {
               seenCitations.add(args.useCaseId);
               let title = args.useCaseId;
@@ -1628,56 +731,8 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
                 description: uc ? uc.description : ""
               });
             }
-          } else if (name === "get_page_dom") {
-            toolResult = await getPageDOM();
-          } else if (name === "get_inspected_element") {
-            toolResult = await getInspectedElement();
-          } else if (name === "click_element") {
-            toolResult = await clickElement(args.selector);
-          } else if (name === "type_text") {
-            toolResult = await typeText(args.selector, args.text);
-          } else if (name === "hover_element") {
-            toolResult = await hoverElement(args.selector);
-          } else if (name === "get_element_info") {
-            toolResult = await getElementInfo(args.selector, args.computedProperties);
-          } else if (name === "get_console_logs") {
-            toolResult = await getConsoleLogs();
-          } else if (name === "scroll_element") {
-            toolResult = await scrollElement(args.selector, args.left, args.top, args.behavior);
-          } else if (name === "press_key") {
-            toolResult = await pressKey(args.selector, args.key);
-          } else if (name === "inspect_event_listeners") {
-            toolResult = await inspectEventListeners(args.selector);
-          } else if (name === "simulate_action") {
-            toolResult = await simulateAction(args.selector, args.action, args.payload);
-          } else if (name === "analyze_layout_metrics") {
-            toolResult = await analyzeLayoutMetrics(args.selector);
-          } else if (name === "get_lcp_element") {
-            toolResult = await getLcpElement();
-          } else if (name === "get_viewport_images") {
-            toolResult = await getViewportImages();
-          } else if (name === "get_network_requests") {
-            toolResult = await getNetworkRequests();
-          } else if (name === "simulate_and_measure_inp") {
-            toolResult = await simulateAndMeasureInp(args.selector, args.action, args.payload);
-          } else if (name === "analyze_css_coverage") {
-            toolResult = await analyzeCssCoverage();
-          } else if (name === "analyze_js_dependencies") {
-            toolResult = await analyzeJsDependencies();
-          } else if (name === "apply_preview") {
-            toolResult = await applyPreview({
-              target: args.selector,
-              modernizedCode: args.modernizedCode,
-              originalCode: args.originalCode
-            }, null);
-          } else if (name === "save_override") {
-            toolResult = await saveOverride({
-              originalCode: args.originalCode,
-              modernizedCode: args.modernizedCode
-            });
-          } else {
-            throw new Error(`Unknown function call: ${name}`);
           }
+
           currentStep.status = 'completed';
           currentStep.result = toolResult;
           triggerUpdate();
@@ -1746,4 +801,3 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
     }
   }
 }
-

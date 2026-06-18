@@ -66,6 +66,123 @@ async function getPageDOM() {
   return result[0].result;
 }
 
+async function getAccessibilityTree() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    world: "MAIN",
+    func: () => {
+      const buildAXTree = (node, depth = 0) => {
+        if (depth > 15) return [];
+
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent.trim();
+          if (!text) return [];
+          return [{
+            role: "staticText",
+            name: text
+          }];
+        }
+
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const styles = window.getComputedStyle(node);
+          if (styles.display === 'none' || styles.visibility === 'hidden') {
+            return [];
+          }
+          if (node.getAttribute('aria-hidden') === 'true') {
+            return [];
+          }
+
+          const tag = node.tagName.toLowerCase();
+          if (['script', 'style', 'iframe', 'noscript', 'link'].includes(tag)) {
+            return [];
+          }
+
+          const info = {
+            tag,
+            role: node.computedRole || node.getAttribute('role') || null,
+            name: node.computedName || null,
+          };
+
+          if (node.id) info.id = node.id;
+          if (node.className) info.class = node.className;
+
+          // States & Properties
+          const tabIndex = node.tabIndex;
+          if (tabIndex !== undefined && tabIndex >= 0) info.focusable = true;
+          if (node.disabled) info.disabled = true;
+          if (node.getAttribute('aria-expanded') !== null) info.expanded = node.getAttribute('aria-expanded') === 'true';
+          if (node.getAttribute('aria-checked') !== null) info.checked = node.getAttribute('aria-checked');
+          if (node.getAttribute('aria-selected') !== null) info.selected = node.getAttribute('aria-selected') === 'true';
+          if (node.getAttribute('aria-current') !== null) info.current = node.getAttribute('aria-current');
+          if (node.getAttribute('aria-live') !== null) info.live = node.getAttribute('aria-live');
+          if (node.getAttribute('aria-invalid') !== null) info.invalid = node.getAttribute('aria-invalid');
+          if (node.getAttribute('aria-level') !== null) info.level = parseInt(node.getAttribute('aria-level'), 10);
+
+          // Clean up null/undefined values
+          for (const key in info) {
+            if (info[key] === null || info[key] === undefined) {
+              delete info[key];
+            }
+          }
+
+          let childNodes = [];
+          if (node.shadowRoot) {
+            info.shadowRoot = true;
+            childNodes = Array.from(node.shadowRoot.childNodes);
+          } else if (tag === 'slot') {
+            childNodes = node.assignedNodes();
+          } else {
+            childNodes = Array.from(node.childNodes);
+          }
+
+          const children = childNodes.flatMap(c => buildAXTree(c, depth + 1));
+
+          // Child Capping
+          let finalChildren = children;
+          if (finalChildren.length > 20) {
+            const originalLength = finalChildren.length;
+            finalChildren = finalChildren.slice(0, 15);
+            finalChildren.push({
+              role: "staticText",
+              name: `... truncated ${originalLength - 15} similar sibling nodes ...`
+            });
+          }
+
+          if (finalChildren.length > 0) {
+            info.children = finalChildren;
+          }
+
+          const hasSemanticInfo = info.role && !['generic', 'presentation', 'none'].includes(info.role);
+          const hasName = !!info.name;
+          const isInteractive = info.focusable || info.disabled;
+
+          // If it has NO semantic info, NO name, and is NOT interactive,
+          // we unwrap/flatten it by returning its children directly.
+          if (!hasSemanticInfo && !hasName && !isInteractive) {
+            return finalChildren;
+          }
+
+          return [info];
+        }
+        return [];
+      };
+
+      const tree = buildAXTree(document.body);
+      return {
+        tree: tree.length > 0 ? tree[0] : null,
+        url: window.location.href,
+        title: document.title
+      };
+    }
+  });
+
+  return result[0].result;
+}
+
+
 function getInspectedElement() {
   return new Promise((resolve, reject) => {
     chrome.devtools.inspectedWindow.eval(
@@ -92,6 +209,103 @@ function getInspectedElement() {
       }
     );
   });
+}
+
+function executeJS(code) {
+  return new Promise((resolve) => {
+    chrome.devtools.inspectedWindow.eval(
+      code,
+      (result, isException) => {
+        if (isException) {
+          resolve({
+            success: false,
+            error: isException.value || isException.description || "JavaScript execution exception"
+          });
+        } else {
+          let overLimit = false;
+          let limitType = "";
+          let sizeDetail = "";
+
+          if (typeof result === "string") {
+            if (result.length > 20000) {
+              overLimit = true;
+              limitType = "string length";
+              sizeDetail = `${result.length} characters (limit: 20000)`;
+            }
+          } else if (Array.isArray(result)) {
+            if (result.length > 200) {
+              overLimit = true;
+              limitType = "array length";
+              sizeDetail = `${result.length} items (limit: 200)`;
+            }
+          } else if (result && typeof result === "object") {
+            try {
+              const str = JSON.stringify(result);
+              if (str.length > 30000) {
+                overLimit = true;
+                limitType = "serialized JSON size";
+                sizeDetail = `${str.length} characters (limit: 30000)`;
+              }
+            } catch (e) {
+              // Ignore serialization error, return raw object/result
+            }
+          }
+
+          if (overLimit) {
+            resolve({
+              success: false,
+              error: `The JavaScript execution returned a result exceeding the safety limits for ${limitType}. Size: ${sizeDetail}. Please modify your script to summarize, slice, or paginate results (e.g. return only count statistics, or use .slice(0, 50)) to stay under limits.`
+            });
+          } else {
+            resolve({
+              success: true,
+              result: result
+            });
+          }
+        }
+      }
+    );
+  });
+}
+
+
+function getInspectedElementBySelector(selector) {
+  return new Promise((resolve, reject) => {
+    chrome.devtools.inspectedWindow.eval(
+      `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        return {
+          outerHTML: el.outerHTML,
+          tagName: el.tagName.toLowerCase(),
+          id: el.id,
+          class: el.className,
+          computedStyle: {
+            display: window.getComputedStyle(el).display,
+            position: window.getComputedStyle(el).position,
+            overflow: window.getComputedStyle(el).overflow,
+            scrollbarColor: window.getComputedStyle(el).scrollbarColor,
+            scrollbarWidth: window.getComputedStyle(el).scrollbarWidth
+          }
+        };
+      })()`,
+      (result, isException) => {
+        if (isException) reject(new Error("Failed to evaluate inspected element by selector"));
+        else resolve(result);
+      }
+    );
+  });
+}
+
+function removeInspectTag(selector) {
+  chrome.devtools.inspectedWindow.eval(
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (el) {
+        el.removeAttribute('data-dino-inspecting');
+      }
+    })()`
+  );
 }
 
 async function highlightElementOnPage(selector) {
@@ -406,7 +620,10 @@ async function getConsoleLogs() {
           console[type] = (...args) => {
             let text = "";
             try { text = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); } catch (e) { text = args.map(String).join(' '); }
-            window.__mwg_console_logs.push({ type, text: text.substring(0, 1000), timestamp: Date.now() });
+            window.__mwg_console_logs.push({ type, text: text.substring(0, 300), timestamp: Date.now() });
+            if (window.__mwg_console_logs.length > 50) {
+              window.__mwg_console_logs.shift();
+            }
             originalConsole[type].apply(console, args);
           };
         });
@@ -904,20 +1121,27 @@ async function getViewportImages() {
 
 // --- NEW AUDITING TOOLS IMPLEMENTATIONS ---
 
-const maxNetworkBuffer = 200;
+const maxNetworkBuffer = 80;
 const networkRequestsBuffer = [];
 
 if (typeof chrome !== "undefined" && chrome.devtools && chrome.devtools.network) {
   chrome.devtools.network.onRequestFinished.addListener((request) => {
     try {
+      const url = request.request.url || "";
+      const truncatedUrl = url.length > 512 ? url.substring(0, 512) + "... [truncated]" : url;
+      
+      const essentialHeaders = ['content-encoding', 'content-type', 'cache-control', 'alt-svc', 'content-length', 'server'];
+      const respHeaders = (request.response.headers || [])
+        .filter(h => essentialHeaders.includes(h.name.toLowerCase()))
+        .map(h => ({ name: h.name, value: h.value }));
+
       const entry = {
-        url: request.request.url || "",
+        url: truncatedUrl,
         method: request.request.method || "",
         status: request.response.status || 0,
         httpVersion: request.response.httpVersion || "",
         mimeType: (request.response.content && request.response.content.mimeType) || "",
-        requestHeaders: request.request.headers || [],
-        responseHeaders: request.response.headers || [],
+        responseHeaders: respHeaders,
         requestSize: request.request.bodySize >= 0 ? request.request.bodySize : 0,
         responseSize: request.response.bodySize >= 0 ? request.response.bodySize : 0,
         contentSize: (request.response.content && request.response.content.size >= 0) ? request.response.content.size : 0,
@@ -1284,5 +1508,173 @@ async function analyzeJsDependencies() {
     success: true,
     scriptsAudited: analysis
   };
+}
+
+async function takeScreenshot(selector) {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  // Step 1: Scroll element into view if selector is specified, and get layout details
+  let layout = null;
+  if (selector && selector !== "viewport" && selector !== "document") {
+    const layoutResults = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: async (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        
+        // Scroll element into center of viewport
+        el.scrollIntoView({ block: "center", inline: "center" });
+        
+        // Wait 150ms for scrolling to settle
+        await new Promise(r => setTimeout(r, 150));
+        
+        const rect = el.getBoundingClientRect();
+        return {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          dpr: window.devicePixelRatio,
+          vw: window.innerWidth,
+          vh: window.innerHeight
+        };
+      },
+      args: [selector]
+    });
+    
+    if (layoutResults && layoutResults[0]) {
+      layout = layoutResults[0].result;
+    }
+    
+    if (!layout) {
+      throw new Error(`Element matching selector "${selector}" was not found.`);
+    }
+  }
+
+  // Step 2: Request the background script to capture the visible tab
+  const captureResponse = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: "capture-tab", tabId }, (res) => {
+      resolve(res);
+    });
+  });
+
+  if (!captureResponse || !captureResponse.success) {
+    throw new Error(captureResponse?.error || "Failed to capture visible tab screenshot.");
+  }
+
+  const base64DataUrl = captureResponse.dataUrl;
+
+  // Step 3: If no element layout or selector specified, return full viewport screenshot
+  if (!layout) {
+    return {
+      screenshot: base64DataUrl,
+      width: null,
+      height: null
+    };
+  }
+
+  // Step 4: Crop the image to the element bounding box
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const dpr = layout.dpr || 1;
+        
+        // Clamp bounds to viewport
+        const left = Math.max(0, layout.left);
+        const top = Math.max(0, layout.top);
+        const width = Math.min(layout.width, layout.vw - left);
+        const height = Math.min(layout.height, layout.vh - top);
+
+        // Canvas dimensions matching element's physical pixels
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to get 2D canvas context for cropping"));
+          return;
+        }
+
+        // Crop the screenshot using drawImage
+        ctx.drawImage(
+          img,
+          left * dpr,
+          top * dpr,
+          width * dpr,
+          height * dpr,
+          0,
+          0,
+          width * dpr,
+          height * dpr
+        );
+
+        const croppedDataUrl = canvas.toDataURL("image/png");
+        resolve({
+          selector: selector,
+          screenshot: croppedDataUrl,
+          width: width,
+          height: height
+        });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = (e) => {
+      reject(new Error("Failed to load captured image for cropping: " + String(e)));
+    };
+    img.src = base64DataUrl;
+  });
+}
+
+async function checkBfcacheReasons() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) throw new Error("No inspected tab found");
+
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      const navEntries = performance.getEntriesByType('navigation');
+      if (navEntries.length === 0) {
+        return { success: false, error: "No navigation timing entries found on the active page." };
+      }
+      const nav = navEntries[0];
+      if (!('notRestoredReasons' in nav)) {
+        return { success: false, error: "The notRestoredReasons API is not supported or enabled in the current browser." };
+      }
+
+      const serializeReasons = (reasonsObj) => {
+        if (!reasonsObj) return null;
+        const result = {
+          blocked: reasonsObj.blocked,
+          src: reasonsObj.src || "",
+          id: reasonsObj.id || "",
+          name: reasonsObj.name || "",
+          reasons: reasonsObj.reasons ? Array.from(reasonsObj.reasons).map(r => ({
+            reason: r.reason || "",
+            source: r.source || ""
+          })) : []
+        };
+        
+        if (reasonsObj.children) {
+          result.children = Array.from(reasonsObj.children)
+            .map(child => serializeReasons(child))
+            .filter(Boolean);
+        }
+        return result;
+      };
+
+      const reasons = serializeReasons(nav.notRestoredReasons);
+      return {
+        success: true,
+        supported: true,
+        reasons: reasons
+      };
+    }
+  });
+
+  return result[0].result;
 }
 
