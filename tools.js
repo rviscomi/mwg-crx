@@ -123,7 +123,7 @@ const toolRegistry = {
   }),
 
   execute_js: new Tool({
-    capability: "core",
+    capability: "scripting",
     declaration: {
       name: "execute_js",
       description: "Evaluate an arbitrary JavaScript expression or function body in the context of the active tab/inspected page and retrieve the serialized results. Use this for advanced diagnostics, querying window or global variables, checking custom component states, or executing complex DOM traversals not supported by other tools. IMPORTANT: Be highly conservative with the size of returned payloads. When querying multiple elements via querySelectorAll, map the elements to a small subset of properties (e.g. tag names or IDs) and explicitly slice the array (e.g., .slice(0, 50)) before returning to avoid exceeding token limits. You can self-paginate results across multiple turns using custom slice ranges (e.g. .slice(50, 100)) if the full list is required.",
@@ -241,7 +241,7 @@ const toolRegistry = {
   }),
 
   get_network_requests: new Tool({
-    capability: "core",
+    capability: "network",
     declaration: {
       name: "get_network_requests",
       description: "Retrieve the buffer of captured HTTP/HTTPS network requests from the active tab. Use this to audit HTTP/3 usage, check for uncompressed assets, detect bloated JSON payloads, or spot third-party trackers."
@@ -251,7 +251,7 @@ const toolRegistry = {
   }),
 
   get_document_headers: new Tool({
-    capability: "core",
+    capability: "network",
     declaration: {
       name: "get_document_headers",
       description: "Retrieve the HTTP/HTTPS response headers of the base HTML document. It automatically follows any redirect chain to return the final document's headers, and preserves all headers (unlike get_network_requests which filters them). Use this to audit HTTP headers such as Speculation-Rules, Link, Content-Security-Policy (CSP), Strict-Transport-Security, and redirects."
@@ -266,7 +266,7 @@ const toolRegistry = {
   }),
 
   simulate_and_measure_inp: new Tool({
-    capability: "core",
+    capability: "interaction",
     declaration: {
       name: "simulate_and_measure_inp",
       description: "Simulate a specific user interaction and measure layout shifts, interaction latency, and retrieve details of any JavaScript scripts blocking the main thread (using Long Animation Frames).",
@@ -463,6 +463,9 @@ async function executeTool(name, args) {
   if (!tool) {
     throw new Error(`Unknown function call: ${name}`);
   }
+  if (!tool.isEnabled(config)) {
+    throw new Error(`Tool "${name}" is disabled by user capability configurations.`);
+  }
   return await tool.execute(args);
 }
 
@@ -479,4 +482,13 @@ function getToolLogMessage(name, args, toolResult) {
 
   const tool = toolRegistry[name];
   return tool ? tool.getLogMessage(args, toolResult) : "";
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getEnabledTools, executeTool, getToolLogMessage, toolRegistry };
+} else if (typeof globalThis !== 'undefined') {
+  globalThis.getEnabledTools = getEnabledTools;
+  globalThis.executeTool = executeTool;
+  globalThis.getToolLogMessage = getToolLogMessage;
+  globalThis.toolRegistry = toolRegistry;
 }

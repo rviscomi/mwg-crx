@@ -1904,5 +1904,165 @@ body {
   word-break: break-word;
 }
 
+/* Token Consumption & Capacity Visualizer Styles */
+.token-visualizer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 4px 0 8px 0;
+  font-size: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s ease;
+}
+
+.token-visualizer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.token-visualizer-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.token-visualizer-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+
+.token-visualizer-badge.healthy {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: var(--success-color);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.token-visualizer-badge.paced {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: var(--warning-color);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.token-visualizer-badge.congested {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--danger-color);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.token-stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding-bottom: 6px;
+}
+
+.token-stats-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.token-stats-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.token-stats-detail {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  text-align: right;
+}
+
+.rate-limits-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.rate-limit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rate-limit-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+}
+
+.rate-limit-name {
+  color: var(--text-secondary);
+}
+
+.rate-limit-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.rate-limit-bar-outer {
+  height: 5px;
+  background-color: rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.rate-limit-bar-inner {
+  height: 100%;
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+}
+
+.rate-limit-bar-inner.low {
+  background-color: var(--success-color);
+}
+
+.rate-limit-bar-inner.medium {
+  background-color: var(--warning-color);
+}
+
+.rate-limit-bar-inner.high {
+  background-color: var(--danger-color);
+}
+
+/* Interactive Code Tags */
+.interactive-code-tag {
+  cursor: pointer;
+  border-bottom: 1px dotted var(--text-color, rgba(255, 255, 255, 0.7));
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: background-color 0.15s ease, border-bottom-color 0.15s ease, color 0.15s ease;
+}
+
+.interactive-code-tag:hover {
+  background-color: rgba(56, 189, 248, 0.15);
+  border-bottom: 1px solid #38bdf8;
+  color: #38bdf8 !important;
+}
+
+.interactive-code-tag:hover * {
+  color: #38bdf8 !important;
+}
+
+
+
 
 

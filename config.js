@@ -2,21 +2,28 @@
 let config = {
   apiKey: "",
   model: "gemini-3.5-flash",
-  apiTier: "free",
+  maxRpm: 1000,
+  maxTpm: 1000000,
   baseUrl: "https://mwg-cf.rviscomi-555.workers.dev/",
   baselineTarget: "widely-available",
   capInteraction: true,
   capLogs: true,
   capPreview: true,
   capOverride: true,
-  capScreenshot: true
+  capScreenshot: true,
+  capScripting: true,
+  capNetwork: true
 };
 
 async function loadConfig() {
   const data = await chrome.storage.local.get([
-    "apiKey", "model", "baseUrl", "baselineTarget",
-    "capInteraction", "capLogs", "capPreview", "capOverride", "capScreenshot"
+    "apiKey", "model", "maxRpm", "maxTpm", "baseUrl", "baselineTarget",
+    "capInteraction", "capLogs", "capPreview", "capOverride", "capScreenshot",
+    "capScripting", "capNetwork"
   ]);
+
+  if (data.maxRpm) config.maxRpm = data.maxRpm;
+  if (data.maxTpm) config.maxTpm = data.maxTpm;
 
   if (data.apiKey) {
     config.apiKey = data.apiKey;
@@ -46,12 +53,16 @@ async function loadConfig() {
   config.capPreview = data.capPreview !== false;
   config.capOverride = data.capOverride !== false;
   config.capScreenshot = data.capScreenshot !== false;
+  config.capScripting = data.capScripting !== false;
+  config.capNetwork = data.capNetwork !== false;
 
   document.getElementById("settings-cap-interaction").checked = config.capInteraction;
   document.getElementById("settings-cap-logs").checked = config.capLogs;
   document.getElementById("settings-cap-preview").checked = config.capPreview;
   document.getElementById("settings-cap-override").checked = config.capOverride;
   document.getElementById("settings-cap-screenshot").checked = config.capScreenshot;
+  document.getElementById("settings-cap-scripting").checked = config.capScripting;
+  document.getElementById("settings-cap-network").checked = config.capNetwork;
 }
 
 async function saveConfig(event) {
@@ -65,12 +76,14 @@ async function saveConfig(event) {
   const capPreview = document.getElementById("settings-cap-preview").checked;
   const capOverride = document.getElementById("settings-cap-override").checked;
   const capScreenshot = document.getElementById("settings-cap-screenshot").checked;
+  const capScripting = document.getElementById("settings-cap-scripting").checked;
+  const capNetwork = document.getElementById("settings-cap-network").checked;
 
   if (!baseUrl.endsWith("/")) baseUrl += "/";
 
   config = {
-    apiKey, model, apiTier: "free", baseUrl, baselineTarget,
-    capInteraction, capLogs, capPreview, capOverride, capScreenshot
+    apiKey, model, maxRpm: config.maxRpm, maxTpm: config.maxTpm, baseUrl, baselineTarget,
+    capInteraction, capLogs, capPreview, capOverride, capScreenshot, capScripting, capNetwork
   };
   await chrome.storage.local.set(config);
   showToast("Settings saved successfully!", "success");

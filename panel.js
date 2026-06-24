@@ -8,7 +8,6 @@ let activeChecklistTasks = {
   audit: [],
   inspect: []
 };
-let activeLoggerId = null;
 
 const AUDIT_PLANS = {
   full: [
@@ -1023,3 +1022,93 @@ function escapeHTML(str) {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
 }
+
+// Expose updateTokenVisualizer globally so agent.js and api-client.js can call it
+window.updateTokenVisualizer = function(loggerId) {
+  if (loggerId !== "audit" && loggerId !== "inspect") return;
+
+  const visualizer = document.getElementById(`${loggerId}-token-visualizer`);
+  if (!visualizer) return;
+
+  // Make sure visualizer is visible if we have any token usage
+  visualizer.classList.remove("hidden");
+
+  // Get current rate limits from api-client
+  if (typeof getCurrentRateLimits !== "function") return;
+  const stats = getCurrentRateLimits();
+  
+  // Update tokens consumed in this run
+  const runTotalEl = document.getElementById(`${loggerId}-tokens-this-run`);
+  const runPromptEl = document.getElementById(`${loggerId}-tokens-prompt-run`);
+  const runResponseEl = document.getElementById(`${loggerId}-tokens-response-run`);
+
+  const runTokens = window.currentRunTokens || { prompt: 0, candidates: 0, total: 0 };
+
+  if (runTotalEl) runTotalEl.textContent = runTokens.total.toLocaleString();
+  if (runPromptEl) runPromptEl.textContent = runTokens.prompt.toLocaleString();
+  if (runResponseEl) runResponseEl.textContent = runTokens.candidates.toLocaleString();
+
+  // Update TPM elements
+  const tpmTextEl = document.getElementById(`${loggerId}-tpm-capacity-text`);
+  const tpmBarEl = document.getElementById(`${loggerId}-tpm-progress-bar`);
+  const tpmPercent = Math.min(100, (stats.tpm / stats.maxTpm) * 100);
+
+  if (tpmTextEl) tpmTextEl.textContent = `${stats.tpm.toLocaleString()} / ${(stats.maxTpm / 1000000).toFixed(1)}M`;
+  if (tpmBarEl) {
+    tpmBarEl.style.width = `${tpmPercent}%`;
+    tpmBarEl.className = "rate-limit-bar-inner"; // reset class
+    if (tpmPercent < 50) {
+      tpmBarEl.classList.add("low");
+    } else if (tpmPercent < 80) {
+      tpmBarEl.classList.add("medium");
+    } else {
+      tpmBarEl.classList.add("high");
+    }
+  }
+
+  // Update RPM elements
+  const rpmTextEl = document.getElementById(`${loggerId}-rpm-capacity-text`);
+  const rpmBarEl = document.getElementById(`${loggerId}-rpm-progress-bar`);
+  const rpmPercent = Math.min(100, (stats.rpm / stats.maxRpm) * 100);
+
+  if (rpmTextEl) rpmTextEl.textContent = `${stats.rpm} / ${stats.maxRpm}`;
+  if (rpmBarEl) {
+    rpmBarEl.style.width = `${rpmPercent}%`;
+    rpmBarEl.className = "rate-limit-bar-inner"; // reset class
+    if (rpmPercent < 50) {
+      rpmBarEl.classList.add("low");
+    } else if (rpmPercent < 80) {
+      rpmBarEl.classList.add("medium");
+    } else {
+      rpmBarEl.classList.add("high");
+    }
+  }
+
+  // Update status badge
+  const badgeEl = document.getElementById(`${loggerId}-token-status-badge`);
+  if (badgeEl) {
+    if (stats.pacingDelay > 0) {
+      badgeEl.textContent = `Pacing (${(stats.pacingDelay / 1000).toFixed(1)}s)`;
+      badgeEl.className = "token-visualizer-badge paced";
+    } else if (tpmPercent >= 80 || rpmPercent >= 80) {
+      badgeEl.textContent = "Congested";
+      badgeEl.className = "token-visualizer-badge congested";
+    } else {
+      badgeEl.textContent = "Healthy";
+      badgeEl.className = "token-visualizer-badge healthy";
+    }
+  }
+};
+
+// Set up periodic decay/refresh updates for active visualizers
+setInterval(() => {
+  const auditLogger = document.getElementById("audit-logger");
+  if (auditLogger && !auditLogger.classList.contains("hidden")) {
+    window.updateTokenVisualizer("audit");
+  }
+  const inspectLogger = document.getElementById("inspect-logger");
+  if (inspectLogger && !inspectLogger.classList.contains("hidden")) {
+    window.updateTokenVisualizer("inspect");
+  }
+}, 1000);
+

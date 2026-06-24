@@ -23,9 +23,9 @@ function getAdaptivePacingDelay(history, loopCount) {
     return sum + (r.actualTokens || r.estimatedTokens);
   }, 0);
   
-  // Standard free tier limits (15 RPM / 1M TPM)
-  const MAX_RPM = 15;
-  const MAX_TPM = 1000000;
+  // Read limits from global config (defaulting to standard free tier limits)
+  const MAX_RPM = (typeof config !== "undefined" && config.maxRpm) ? config.maxRpm : 15;
+  const MAX_TPM = (typeof config !== "undefined" && config.maxTpm) ? config.maxTpm : 1000000;
   
   let delay = 0;
   
@@ -59,6 +59,10 @@ function getAdaptivePacingDelay(history, loopCount) {
     estimatedTokens: estimatedRequestTokens,
     actualTokens: 0
   });
+
+  if (typeof window !== "undefined" && typeof updateTokenVisualizer === "function") {
+    updateTokenVisualizer(window.activeLoggerId);
+  }
   
   return delay;
 }
@@ -75,6 +79,18 @@ async function fetchWithRetry(url, options, maxRetries = 5, loggerId = null) {
       }
       
       if (response.status === 429 || response.status === 503) {
+        if (response.status === 429) {
+          const now = Date.now();
+          const currentRPM = recentRequests.filter(r => now - r.timestamp < 60000).length;
+          if (currentRPM >= 15 && config.maxRpm > 15) {
+            console.warn(`Dynamic rate limit auto-detection: Hit 429 at ${currentRPM} RPM. Downgrading session limit to 15 RPM.`);
+            config.maxRpm = 15;
+            if (typeof updateTokenVisualizer === "function") {
+              updateTokenVisualizer(window.activeLoggerId);
+            }
+          }
+        }
+        
         attempt++;
         if (attempt > maxRetries) {
           const errText = await response.text();
@@ -115,4 +131,27 @@ async function fetchWithRetry(url, options, maxRetries = 5, loggerId = null) {
       continue;
     }
   }
+}
+
+function getCurrentRateLimits() {
+  const now = Date.now();
+  recentRequests = recentRequests.filter(r => now - r.timestamp < 60000);
+  
+  const currentRPM = recentRequests.length;
+  const currentTPM = recentRequests.reduce((sum, r) => {
+    return sum + (r.actualTokens || r.estimatedTokens);
+  }, 0);
+  
+  const pacingDelay = recentRequests.length > 0 ? Math.max(0, recentRequests[recentRequests.length - 1].timestamp - now) : 0;
+
+  const maxRpm = (typeof config !== "undefined" && config.maxRpm) ? config.maxRpm : 15;
+  const maxTpm = (typeof config !== "undefined" && config.maxTpm) ? config.maxTpm : 1000000;
+
+  return {
+    rpm: currentRPM,
+    tpm: currentTPM,
+    maxRpm: maxRpm,
+    maxTpm: maxTpm,
+    pacingDelay
+  };
 }

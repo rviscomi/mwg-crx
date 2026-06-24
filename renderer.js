@@ -1,4 +1,12 @@
 // Opportunity Cards HTML Renderer
+function detectLanguage(code) {
+  if (!code) return 'html';
+  const trimmed = code.trim();
+  if (trimmed.startsWith('<')) return 'html';
+  if (trimmed.includes('{') || (trimmed.includes(':') && trimmed.includes(';'))) return 'css';
+  return 'javascript';
+}
+
 function renderOpportunities(container, list, filterTraining = false) {
   container.innerHTML = "";
 
@@ -57,6 +65,53 @@ function renderOpportunities(container, list, filterTraining = false) {
       targetHtml = `<a class="target-link-btn" href="#" data-target="${escapeHtml(opp.target)}"><code>${escapeHtml(opp.target)}</code></a>`;
     }
 
+    let diffHtml = "";
+    if (opp.changes && opp.changes.length > 0) {
+      const changesHtml = opp.changes.map((c, idx) => {
+        const lang = detectLanguage(c.originalCode || c.modernizedCode || "");
+        const highlightedOriginal = c.originalCode ? highlightCode(c.originalCode, lang) : "// N/A";
+        const highlightedModernized = c.modernizedCode ? highlightCode(c.modernizedCode, lang) : "// N/A";
+        return `
+            <div class="diff-change-item">
+              <div class="diff-change-target">Target: ${escapeHtml(c.target || opp.target || "document")}</div>
+              <div class="diff-grid">
+                <div class="diff-pane">
+                  <div class="diff-pane-title">Legacy / Current</div>
+                  <pre><code class="code-del language-${lang}">${highlightedOriginal}</code></pre>
+                </div>
+                <div class="diff-pane">
+                  <div class="diff-pane-title">Modernized Solution</div>
+                  <pre><code class="code-add language-${lang}">${highlightedModernized}</code></pre>
+                </div>
+              </div>
+            </div>`;
+      }).join("");
+      
+      diffHtml = `
+        <div class="diff-container">
+          <span class="diff-header">Code Refactoring (Multiple Changes):</span>
+          ${changesHtml}
+        </div>`;
+    } else if (opp.originalCode || opp.modernizedCode) {
+      const lang = detectLanguage(opp.originalCode || opp.modernizedCode || "");
+      const highlightedOriginal = opp.originalCode ? highlightCode(opp.originalCode, lang) : "// N/A";
+      const highlightedModernized = opp.modernizedCode ? highlightCode(opp.modernizedCode, lang) : "// N/A";
+      diffHtml = `
+        <div class="diff-container">
+          <span class="diff-header">Code Refactoring:</span>
+          <div class="diff-grid">
+            <div class="diff-pane">
+              <div class="diff-pane-title">Legacy / Current</div>
+              <pre><code class="code-del language-${lang}">${highlightedOriginal}</code></pre>
+            </div>
+            <div class="diff-pane">
+              <div class="diff-pane-title">Modernized Solution</div>
+              <pre><code class="code-add language-${lang}">${highlightedModernized}</code></pre>
+            </div>
+          </div>
+        </div>`;
+    }
+
     card.innerHTML = `
       <div class="opp-header">
         <div class="opp-title-group">
@@ -75,40 +130,7 @@ function renderOpportunities(container, list, filterTraining = false) {
           <span class="verify-text"></span>
         </div>
         
-        ${opp.changes && opp.changes.length > 0 ? `
-        <div class="diff-container">
-          <span class="diff-header">Code Refactoring (Multiple Changes):</span>
-          ${opp.changes.map((c, idx) => `
-            <div class="diff-change-item">
-              <div class="diff-change-target">Target: ${escapeHtml(c.target || opp.target || "document")}</div>
-              <div class="diff-grid">
-                <div class="diff-pane">
-                  <div class="diff-pane-title">Legacy / Current</div>
-                  <pre><code class="code-del">${escapeHtml(c.originalCode || "// N/A")}</code></pre>
-                </div>
-                <div class="diff-pane">
-                  <div class="diff-pane-title">Modernized Solution</div>
-                  <pre><code class="code-add">${escapeHtml(c.modernizedCode || "// N/A")}</code></pre>
-                </div>
-              </div>
-            </div>
-          `).join("")}
-        </div>
-        ` : (opp.originalCode || opp.modernizedCode ? `
-        <div class="diff-container">
-          <span class="diff-header">Code Refactoring:</span>
-          <div class="diff-grid">
-            <div class="diff-pane">
-              <div class="diff-pane-title">Legacy / Current</div>
-              <pre><code class="code-del">${escapeHtml(opp.originalCode || "// N/A")}</code></pre>
-            </div>
-            <div class="diff-pane">
-              <div class="diff-pane-title">Modernized Solution</div>
-              <pre><code class="code-add">${escapeHtml(opp.modernizedCode || "// N/A")}</code></pre>
-            </div>
-          </div>
-        </div>
-        ` : "")}
+        ${diffHtml}
 
         <div class="opp-actions-row">
           ${opp.modernizedCode || (opp.changes && opp.changes.length > 0) ? `
@@ -289,6 +311,9 @@ function renderOpportunities(container, list, filterTraining = false) {
       container.appendChild(card);
     });
   }
+
+  // Bind interactive code tags for element highlights/inspections inside HTML/code blocks
+  bindInteractiveCodeTags(container);
 }
 
 function escapeHtml(str) {

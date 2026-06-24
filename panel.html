@@ -87,6 +87,44 @@
               <span class="logger-status-text">Running analysis...</span>
               <span class="logger-timer" id="audit-timer">0.0s</span>
             </div>
+            
+            <!-- Token Consumption & Capacity Visualizer -->
+            <div class="token-visualizer hidden" id="audit-token-visualizer">
+              <div class="token-visualizer-header">
+                <span class="token-visualizer-title">⚡ API Consumption</span>
+                <span class="token-visualizer-badge healthy" id="audit-token-status-badge">Healthy</span>
+              </div>
+              <div class="token-stats-row">
+                <span class="token-stats-label">Tokens (This Run)</span>
+                <div>
+                  <span class="token-stats-value" id="audit-tokens-this-run">0</span>
+                  <div class="token-stats-detail">
+                    Prompt: <span id="audit-tokens-prompt-run">0</span> • Resp: <span id="audit-tokens-response-run">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="rate-limits-grid">
+                <div class="rate-limit-card">
+                  <div class="rate-limit-info">
+                    <span class="rate-limit-name">TPM (Tokens/Min)</span>
+                    <span class="rate-limit-value" id="audit-tpm-capacity-text">0 / 1.0M</span>
+                  </div>
+                  <div class="rate-limit-bar-outer">
+                    <div class="rate-limit-bar-inner low" id="audit-tpm-progress-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+                <div class="rate-limit-card">
+                  <div class="rate-limit-info">
+                    <span class="rate-limit-name">RPM (Reqs/Min)</span>
+                    <span class="rate-limit-value" id="audit-rpm-capacity-text">0 / 15</span>
+                  </div>
+                  <div class="rate-limit-bar-outer">
+                    <div class="rate-limit-bar-inner low" id="audit-rpm-progress-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="audit-checklist hidden" id="audit-checklist"></div>
             <div class="logger-content" id="audit-log-lines"></div>
           </div>
@@ -139,6 +177,44 @@
               <span class="logger-status-text">Analyzing element...</span>
               <span class="logger-timer" id="inspect-timer">0.0s</span>
             </div>
+
+            <!-- Token Consumption & Capacity Visualizer -->
+            <div class="token-visualizer hidden" id="inspect-token-visualizer">
+              <div class="token-visualizer-header">
+                <span class="token-visualizer-title">⚡ API Consumption</span>
+                <span class="token-visualizer-badge healthy" id="inspect-token-status-badge">Healthy</span>
+              </div>
+              <div class="token-stats-row">
+                <span class="token-stats-label">Tokens (This Run)</span>
+                <div>
+                  <span class="token-stats-value" id="inspect-tokens-this-run">0</span>
+                  <div class="token-stats-detail">
+                    Prompt: <span id="inspect-tokens-prompt-run">0</span> • Resp: <span id="inspect-tokens-response-run">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="rate-limits-grid">
+                <div class="rate-limit-card">
+                  <div class="rate-limit-info">
+                    <span class="rate-limit-name">TPM (Tokens/Min)</span>
+                    <span class="rate-limit-value" id="inspect-tpm-capacity-text">0 / 1.0M</span>
+                  </div>
+                  <div class="rate-limit-bar-outer">
+                    <div class="rate-limit-bar-inner low" id="inspect-tpm-progress-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+                <div class="rate-limit-card">
+                  <div class="rate-limit-info">
+                    <span class="rate-limit-name">RPM (Reqs/Min)</span>
+                    <span class="rate-limit-value" id="inspect-rpm-capacity-text">0 / 15</span>
+                  </div>
+                  <div class="rate-limit-bar-outer">
+                    <div class="rate-limit-bar-inner low" id="inspect-rpm-progress-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="audit-checklist hidden" id="inspect-checklist"></div>
             <div class="logger-content" id="inspect-log-lines"></div>
           </div>
@@ -257,6 +333,14 @@
                 <label class="checkbox-container">
                   <input type="checkbox" id="settings-cap-screenshot" checked>
                   <span class="checkbox-label">Take Screenshots (Visual Verification & Audit)</span>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="settings-cap-scripting" checked>
+                  <span class="checkbox-label">Execute Custom Scripts (Arbitrary JS evaluation)</span>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="settings-cap-network" checked>
+                  <span class="checkbox-label">Network Auditing (HTTP headers & network logs)</span>
                 </label>
               </div>
               <span class="help-text">Disabling capabilities removes their tools from Dino, reducing API execution turns and response times.</span>

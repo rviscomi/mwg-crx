@@ -1,8 +1,75 @@
-// Gemini REST Orchestrator and Agentic Tool-Calling Loop
 let isAborted = false;
 let currentAbortController = null;
 let isEarlyCompletionRequested = false;
-let activeLoggerId = null;
+if (typeof window !== "undefined") {
+  window.activeLoggerId = null;
+}
+
+const DEFAULT_REPORT_SCHEMA = {
+  type: "ARRAY",
+  items: {
+    type: "OBJECT",
+    properties: {
+      title: { 
+        type: "STRING",
+        description: "A short, descriptive title summarizing the legacy pattern found and the modern alternative (e.g. 'Use customizable select element'). Max 60 chars."
+      },
+      impact: {
+        type: "STRING",
+        enum: ["high", "medium", "low"],
+        description: "The priority/impact of the modernization (high, medium, or low)."
+      },
+      useCaseId: { 
+        type: "STRING",
+        description: "The exact matching use case ID from the list_use_cases results (e.g. 'branded-select-styling'). Must be a short string or null if not covered by a specific guide. DO NOT put notes or thoughts here."
+      },
+      guideAnchor: { 
+        type: "STRING",
+        description: "The optional heading anchor string from the guide (no '#' symbol, e.g. 'fallbacks-browser-support-for-customizable-select'). Must be a short string or null. DO NOT put notes or thoughts here."
+      },
+      description: { 
+        type: "STRING",
+        description: "A clear, concise explanation of the legacy issue, the modernized alternative, and how the new web API helps. Maximum 300 chars."
+      },
+      target: { 
+        type: "STRING",
+        description: "The primary CSS selector of the legacy DOM element, or 'document' for global issues, or 'Network' for HTTP/network issues."
+      },
+      originalCode: { 
+        type: "STRING",
+        description: "Concrete legacy HTML/CSS/JS snippet of the element or code. Keep it minimal and extremely focused on the issue."
+      },
+      modernizedCode: { 
+        type: "STRING",
+        description: "Concrete refactored/modernized HTML/CSS/JS snippet. Keep it minimal, concise, and focused. Do NOT include placeholder text or ellipses."
+      },
+      changes: {
+        type: "ARRAY",
+        description: "Optional array of secondary or multi-file changes when a single code recommendation is not sufficient.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            target: { 
+              type: "STRING",
+              description: "CSS selector or file path for this specific change."
+            },
+            originalCode: { 
+              type: "STRING",
+              description: "Legacy code snippet."
+            },
+            modernizedCode: { 
+              type: "STRING",
+              description: "Modernized replacement snippet. No placeholders or ellipses."
+            }
+          },
+          required: ["originalCode", "modernizedCode"]
+        }
+      }
+    },
+    required: ["title", "impact", "useCaseId", "guideAnchor", "description", "target", "originalCode", "modernizedCode"]
+  }
+};
+
 
 function earlyCompleteAnalysis() {
   isEarlyCompletionRequested = true;
@@ -19,8 +86,52 @@ function supportsThinking(modelName) {
          name.includes("thinking");
 }
 
+function getNormalizedToolKey(name, args) {
+  if (!args || typeof args !== "object") return name;
+
+  if (name === "execute_js") {
+    // Only compare the JS code content; purpose is user-facing and can vary per turn.
+    return `execute_js:${(args.code || "").trim()}`;
+  }
+
+  if (name === "get_element_info") {
+    // Normalize selector: split, trim, sort, and join comma-separated lists.
+    const selector = (args.selector || "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean)
+      .sort()
+      .join(",");
+    const props = args.computedProperties 
+      ? [...args.computedProperties].sort() 
+      : [];
+    return `get_element_info:${JSON.stringify({ selector, computedProperties: props })}`;
+  }
+
+  // Fallback for general tools: sort arguments by key to prevent ordering variations.
+  const sortedArgs = {};
+  const keys = Object.keys(args).sort();
+  for (const key of keys) {
+    sortedArgs[key] = args[key];
+  }
+  return `${name}:${JSON.stringify(sortedArgs)}`;
+}
+
 async function runGeminiAgent(loggerId, startPrompt, systemInstruction, responseSchema, screenshot = null) {
-  activeLoggerId = loggerId;
+  const activeSchema = responseSchema || DEFAULT_REPORT_SCHEMA;
+  if (typeof window !== "undefined") {
+    window.activeLoggerId = loggerId;
+  }
+  if (typeof window !== "undefined") {
+    window.currentRunTokens = {
+      prompt: 0,
+      candidates: 0,
+      total: 0
+    };
+  }
+  if (typeof updateTokenVisualizer === "function") {
+    updateTokenVisualizer(loggerId);
+  }
   if (isAborted) {
     throw new Error("Analysis aborted by user.");
   }
@@ -38,6 +149,7 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
 
   const tools = getEnabledTools();
+  const toolCallCounts = new Map();
 
   const initialParts = [{ text: startPrompt }];
   if (screenshot) {
@@ -60,6 +172,8 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
   ];
 
   let loopCount = 0;
+  let jsonParseRetries = 0;
+  const maxJsonParseRetries = 2;
 
   while (true) {
     if (isAborted) {
@@ -67,13 +181,14 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
     }
     if (isEarlyCompletionRequested) {
       isEarlyCompletionRequested = false;
-      const report = await generateEarlyReport(url, history, systemInstruction, responseSchema, loggerId);
+      if (typeof autoProgressChecklistFinal === "function") {
+        autoProgressChecklistFinal(loggerId);
+      }
+      const report = await generateEarlyReport(url, history, systemInstruction, activeSchema, loggerId);
       return report;
     }
     loopCount++;
     appendLog(loggerId, `Calling Gemini API (Turn ${loopCount})...`, "system");
-
-    pruneHistory(history);
 
     const requestBody = {
       contents: history,
@@ -84,38 +199,8 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
       generationConfig: {
         responseMimeType: "application/json",
         maxOutputTokens: 8192,
-        responseSchema: responseSchema || {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              title: { type: "STRING" },
-              impact: {
-                type: "STRING",
-                enum: ["high", "medium", "low"]
-              },
-              useCaseId: { type: "STRING" },
-              guideAnchor: { type: "STRING" },
-              description: { type: "STRING" },
-              target: { type: "STRING" },
-              originalCode: { type: "STRING" },
-              modernizedCode: { type: "STRING" },
-              changes: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    target: { type: "STRING" },
-                    originalCode: { type: "STRING" },
-                    modernizedCode: { type: "STRING" }
-                  },
-                  required: ["originalCode", "modernizedCode"]
-                }
-              }
-            },
-            required: ["title", "impact", "description", "target", "originalCode", "modernizedCode"]
-          }
-        }
+        responseSchema: activeSchema,
+        temperature: 0.6
       }
     };
 
@@ -171,7 +256,10 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
     }
     if (isEarlyCompletionRequested) {
       isEarlyCompletionRequested = false;
-      const report = await generateEarlyReport(url, history, systemInstruction, responseSchema, loggerId);
+      if (typeof autoProgressChecklistFinal === "function") {
+        autoProgressChecklistFinal(loggerId);
+      }
+      const report = await generateEarlyReport(url, history, systemInstruction, activeSchema, loggerId);
       return report;
     }
 
@@ -188,7 +276,10 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
         if (isEarlyCompletionRequested) {
           isEarlyCompletionRequested = false;
           appendLog(loggerId, "Request aborted. Compiling report with gathered data...", "system");
-          const report = await generateEarlyReport(url, history, systemInstruction, responseSchema, loggerId);
+          if (typeof autoProgressChecklistFinal === "function") {
+            autoProgressChecklistFinal(loggerId);
+          }
+          const report = await generateEarlyReport(url, history, systemInstruction, activeSchema, loggerId);
           return report;
         }
         throw new Error("Analysis aborted by user.");
@@ -204,10 +295,33 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
       if (entry) {
         entry.actualTokens = resJson.usageMetadata.totalTokenCount;
       }
+      if (typeof window !== "undefined" && window.currentRunTokens) {
+        window.currentRunTokens.prompt += resJson.usageMetadata.promptTokenCount || 0;
+        window.currentRunTokens.candidates += resJson.usageMetadata.candidatesTokenCount || 0;
+        window.currentRunTokens.total += resJson.usageMetadata.totalTokenCount || 0;
+      }
+      if (typeof updateTokenVisualizer === "function") {
+        updateTokenVisualizer(loggerId);
+      }
+    }
+
+    if (!resJson.candidates || resJson.candidates.length === 0) {
+      if (resJson.promptFeedback) {
+        throw new Error(`Gemini API prompt blocked: ${JSON.stringify(resJson.promptFeedback)}`);
+      }
+      throw new Error(`Gemini API returned response without candidates: ${JSON.stringify(resJson)}`);
     }
 
     const candidate = resJson.candidates[0];
     const rawModelContent = candidate.content;
+
+    if (!rawModelContent || !rawModelContent.parts || rawModelContent.parts.length === 0) {
+      let errorMsg = "Gemini API returned an empty or unrecognized response.";
+      if (candidate.finishReason && candidate.finishReason !== "STOP") {
+        errorMsg += ` (Generation stopped early due to finishReason: "${candidate.finishReason}")`;
+      }
+      throw new Error(errorMsg);
+    }
 
     console.log("Raw Model Content:", rawModelContent);
 
@@ -258,19 +372,35 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
           continue;
         }
         const { name, args } = fc.functionCall;
-        appendLog(loggerId, `Model requested tool execution: ${name}(${JSON.stringify(args || {})})`, "agent");
+        const callKey = getNormalizedToolKey(name, args);
+        const count = (toolCallCounts.get(callKey) || 0) + 1;
+        toolCallCounts.set(callKey, count);
 
         let toolResult;
-        try {
-          toolResult = await executeTool(name, args);
-          const logMsg = getToolLogMessage(name, args, toolResult);
-          if (logMsg) {
-            appendLog(loggerId, `Tool output: ${logMsg}`, "tool");
+        if (count >= 4) {
+          appendLog(loggerId, `Loop prevention: Intercepted repeated call to ${name}`, "system");
+          toolResult = {
+            error: `Loop prevention: You have already executed ${name} with these exact arguments ${count - 1} times in this run. The results are in your history. Please do not repeat tool calls. Review your strategy and compile your final response.`
+          };
+        } else {
+          appendLog(loggerId, `Model requested tool execution: ${name}(${JSON.stringify(args || {})})`, "agent");
+          if (count === 3) {
+            appendLog(loggerId, `Warning: Tool ${name} has been called 3 times with the same arguments. Potential loop detected.`, "system");
           }
-        } catch (err) {
-          console.error("Tool execution failed:", err);
-          toolResult = { error: err.message };
-          appendLog(loggerId, `Tool output: Execution failed (${err.message})`, "system");
+          if (typeof autoProgressChecklist === "function") {
+            autoProgressChecklist(name, args, loopCount);
+          }
+          try {
+            toolResult = await executeTool(name, args);
+            const logMsg = getToolLogMessage(name, args, toolResult);
+            if (logMsg) {
+              appendLog(loggerId, `Tool output: ${logMsg}`, "tool");
+            }
+          } catch (err) {
+            console.error("Tool execution failed:", err);
+            toolResult = { error: err.message };
+            appendLog(loggerId, `Tool output: Execution failed (${err.message})`, "system");
+          }
         }
 
         console.log("Pushing Tool Result:", toolResult);
@@ -290,6 +420,9 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
     } else {
       // Final text response reached
       appendLog(loggerId, "Analysis completed! Parsing results...", "system");
+      if (typeof autoProgressChecklistFinal === "function") {
+        autoProgressChecklistFinal(loggerId);
+      }
       
       const textParts = modelContent.parts.filter(p => p.text !== undefined).map(p => p.text).join("\n").trim();
       if (!textParts) {
@@ -325,13 +458,37 @@ async function runGeminiAgent(loggerId, startPrompt, systemInstruction, response
         return Array.isArray(parsed) ? parsed : [parsed];
       } catch (err) {
         console.error("Failed to parse Gemini output text to JSON:", textParts, err);
-        throw new Error(`Final report did not conform to JSON format: ${err.message}. Raw output: ${textParts.substring(0, 300)}`);
+        if (jsonParseRetries < maxJsonParseRetries) {
+          jsonParseRetries++;
+          appendLog(loggerId, `Malformed JSON response: ${err.message}. Retrying generation (Attempt ${jsonParseRetries}/${maxJsonParseRetries})...`, "system");
+          
+          let retryPrompt = `The last response could not be parsed as valid JSON. Error: ${err.message}.`;
+          if (candidate && candidate.finishReason === "MAX_TOKENS") {
+            retryPrompt += ` The generation was cut off due to MAX_TOKENS. Please output a more concise, complete, and valid JSON report containing all identified findings without truncating.`;
+          } else {
+            retryPrompt += ` Please correct the formatting and output a valid JSON report conforming strictly to the requested response schema.`;
+          }
+
+          history.push({
+            role: "user",
+            parts: [{ text: retryPrompt }]
+          });
+          continue;
+        }
+
+        let errorMsg = `Final report did not conform to JSON format: ${err.message}`;
+        if (candidate && candidate.finishReason && candidate.finishReason !== "STOP") {
+          errorMsg += ` (Generation stopped early due to finishReason: "${candidate.finishReason}")`;
+        }
+        errorMsg += `. Raw output: ${textParts.substring(0, 300)}`;
+        throw new Error(errorMsg);
       }
     }
   }
 }
 
 async function generateEarlyReport(url, history, baseSystemInstruction, responseSchema, loggerId) {
+  const activeSchema = responseSchema || DEFAULT_REPORT_SCHEMA;
   const earlySystemPrompt = `${baseSystemInstruction || GENERIC_SYSTEM_INSTRUCTION}
   
   CRITICAL INSTRUCTION:
@@ -340,55 +497,132 @@ async function generateEarlyReport(url, history, baseSystemInstruction, response
 
   appendLog(loggerId, "Querying Gemini for early report...", "system");
 
-  currentAbortController = new AbortController();
-  
-  const requestBody = {
-    contents: history,
-    systemInstruction: {
-      parts: [{ text: earlySystemPrompt }]
-    },
-    generationConfig: {
-      responseMimeType: "application/json",
-      maxOutputTokens: 8192,
-      responseSchema: responseSchema
-    }
-  };
+  const localHistory = [...history];
+  let jsonParseRetries = 0;
+  const maxJsonParseRetries = 2;
 
-  if (supportsThinking(config.model)) {
-    requestBody.generationConfig.thinkingConfig = {
-      thinkingBudget: 2048
+  while (true) {
+    currentAbortController = new AbortController();
+    
+    const requestBody = {
+      contents: localHistory,
+      systemInstruction: {
+        parts: [{ text: earlySystemPrompt }]
+      },
+      generationConfig: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 8192,
+        responseSchema: activeSchema,
+        temperature: 0.6
+      }
     };
-  }
 
-  const response = await fetchWithRetry(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
-    signal: currentAbortController.signal
-  }, 3, loggerId);
+    // We do NOT add thinkingConfig here because thinking budget consumes output tokens,
+    // and we need to maximize the tokens available for the final JSON report.
 
-  const resJson = await response.json();
-  const textParts = resJson.candidates[0].content.parts.filter(p => p.text !== undefined).map(p => p.text).join("\n").trim();
-  
-  try {
-    const firstBracket = textParts.indexOf("[");
-    const firstBrace = textParts.indexOf("{");
-    let startIdx = -1;
-    let endChar = "";
-    if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
-      startIdx = firstBracket;
-      endChar = "]";
-    } else if (firstBrace !== -1) {
-      startIdx = firstBrace;
-      endChar = "}";
+    let response;
+    try {
+      response = await fetchWithRetry(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: currentAbortController.signal
+      }, 3, loggerId);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error("Analysis aborted by user.");
+      }
+      throw err;
     }
-    if (startIdx === -1) throw new Error("No JSON structure found");
-    const endIdx = textParts.lastIndexOf(endChar);
-    const jsonText = textParts.substring(startIdx, endIdx + 1);
-    const parsed = JSON.parse(jsonText);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch (err) {
-    throw new Error(`Failed to parse early report JSON: ${err.message}. Raw output: ${textParts}`);
+
+    const resJson = await response.json();
+    if (!resJson.candidates || resJson.candidates.length === 0) {
+      if (resJson.promptFeedback) {
+        throw new Error(`Gemini API prompt blocked during early report: ${JSON.stringify(resJson.promptFeedback)}`);
+      }
+      throw new Error(`Gemini API returned response without candidates during early report: ${JSON.stringify(resJson)}`);
+    }
+
+    const candidate = resJson.candidates[0];
+    const rawModelContent = candidate.content;
+
+    if (!rawModelContent || !rawModelContent.parts || rawModelContent.parts.length === 0) {
+      let errorMsg = "Gemini API returned empty response content during early report.";
+      if (candidate.finishReason && candidate.finishReason !== "STOP") {
+        errorMsg += ` (Generation stopped early due to finishReason: "${candidate.finishReason}")`;
+      }
+      throw new Error(errorMsg);
+    }
+
+    // Sanitize the candidate content parts to keep standard attributes
+    const sanitizedParts = rawModelContent.parts.map(p => {
+      const cleanPart = {};
+      if (p.text !== undefined) cleanPart.text = p.text;
+      if (p.functionCall !== undefined) {
+        cleanPart.functionCall = {
+          name: p.functionCall.name,
+          args: p.functionCall.args || {}
+        };
+      }
+      if (p.thoughtSignature !== undefined) {
+        cleanPart.thoughtSignature = p.thoughtSignature;
+      }
+      return cleanPart;
+    }).filter(p => Object.keys(p).length > 0);
+
+    const modelContent = {
+      role: "model",
+      parts: sanitizedParts
+    };
+
+    localHistory.push(modelContent);
+
+    const textParts = modelContent.parts.filter(p => p.text !== undefined).map(p => p.text).join("\n").trim();
+    
+    try {
+      const firstBracket = textParts.indexOf("[");
+      const firstBrace = textParts.indexOf("{");
+      let startIdx = -1;
+      let endChar = "";
+      if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+        startIdx = firstBracket;
+        endChar = "]";
+      } else if (firstBrace !== -1) {
+        startIdx = firstBrace;
+        endChar = "}";
+      }
+      if (startIdx === -1) throw new Error("No JSON structure found");
+      const endIdx = textParts.lastIndexOf(endChar);
+      const jsonText = textParts.substring(startIdx, endIdx + 1);
+      const parsed = JSON.parse(jsonText);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch (err) {
+      console.error("Failed to parse Gemini early report output text to JSON:", textParts, err);
+      if (jsonParseRetries < maxJsonParseRetries) {
+        jsonParseRetries++;
+        appendLog(loggerId, `Malformed early report JSON: ${err.message}. Retrying generation (Attempt ${jsonParseRetries}/${maxJsonParseRetries})...`, "system");
+        
+        let retryPrompt = `The last response could not be parsed as valid JSON. Error: ${err.message}.`;
+        if (candidate.finishReason === "MAX_TOKENS") {
+          retryPrompt += ` The generation was cut off due to MAX_TOKENS. Please output a more concise, complete, and valid JSON report containing all identified findings without truncating.`;
+        } else {
+          retryPrompt += ` Please correct the formatting and output a valid JSON report conforming strictly to the requested response schema.`;
+        }
+
+        localHistory.push({
+          role: "user",
+          parts: [{ text: retryPrompt }]
+        });
+        continue;
+      }
+
+      let errorMsg = `Failed to parse early report JSON: ${err.message}`;
+      if (candidate.finishReason && candidate.finishReason !== "STOP") {
+        errorMsg += ` (Generation stopped early due to finishReason: "${candidate.finishReason}")`;
+      }
+      errorMsg += `. Raw output: ${textParts.substring(0, 300)}`;
+      throw new Error(errorMsg);
+    }
   }
 }
 
@@ -398,8 +632,14 @@ function appendLog(loggerId, message, sender = "system") {
   const line = document.createElement("div");
   line.className = `log-line ${sender}`;
   line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+  
+  const isAtBottom = logDiv.scrollHeight - logDiv.clientHeight - logDiv.scrollTop <= 15;
+  
   logDiv.appendChild(line);
-  logDiv.scrollTop = logDiv.scrollHeight;
+  
+  if (isAtBottom) {
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
 }
 
 async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextStream) {
@@ -431,6 +671,7 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
   const triggerUpdate = () => onStepUpdate([...steps]);
 
   let loopCount = 0;
+  const toolCallCounts = new Map();
 
   while (true) {
     if (isAborted) {
@@ -452,8 +693,6 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
     ===RESPONSE===
     Here is the modernized implementation for your navigation menu...`;
     }
-
-    pruneHistory(contents);
 
     const requestBody = {
       contents: contents,
@@ -705,46 +944,62 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
         else if (name === "take_screenshot") statusMsg = args.selector ? `Taking screenshot of element "${args.selector}"...` : "Taking screenshot of viewport...";
         else if (name === "check_bfcache_reasons") statusMsg = "Checking Back-Forward Cache (bfcache) blocking reasons...";
 
+        const callKey = getNormalizedToolKey(name, args);
+        const count = (toolCallCounts.get(callKey) || 0) + 1;
+        toolCallCounts.set(callKey, count);
+
         const currentStep = {
           type: 'tool',
           name: name,
           args: args,
-          title: statusMsg,
+          title: count >= 4 ? `Loop prevented: Repeated call to ${name}` : statusMsg,
           status: 'running'
         };
         steps.push(currentStep);
         triggerUpdate();
 
         let toolResult;
-        try {
-          toolResult = await executeTool(name, args);
-
-          // Handle citations special case for get_guide_content
-          if (name === "get_guide_content" && toolResult) {
-            if (!seenCitations.has(args.useCaseId)) {
-              seenCitations.add(args.useCaseId);
-              let title = args.useCaseId;
-              const titleMatch = toolResult.match(/^#\s+(.+)$/m);
-              if (titleMatch) title = titleMatch[1].trim();
-              
-              const uc = useCasesCache.find(u => u.id === args.useCaseId);
-              citations.push({
-                id: args.useCaseId,
-                title: title,
-                description: uc ? uc.description : ""
-              });
-            }
-          }
-
-          currentStep.status = 'completed';
-          currentStep.result = toolResult;
-          triggerUpdate();
-        } catch (err) {
-          console.error("Tool execution failed:", err);
-          toolResult = { error: err.message };
+        if (count >= 4) {
           currentStep.status = 'failed';
-          currentStep.error = err.message;
+          currentStep.error = `Repeated tool call prevented.`;
           triggerUpdate();
+          toolResult = {
+            error: `Loop prevention: You have already executed ${name} with these exact arguments ${count - 1} times in this run. The results are in your history. Please do not repeat tool calls. Review your strategy and compile your final response.`
+          };
+        } else {
+          if (count === 3) {
+            console.warn(`[Dino Chat Agent] Warning: Tool ${name} called 3 times with same args:`, args);
+          }
+          try {
+            toolResult = await executeTool(name, args);
+
+            // Handle citations special case for get_guide_content
+            if (name === "get_guide_content" && toolResult) {
+              if (!seenCitations.has(args.useCaseId)) {
+                seenCitations.add(args.useCaseId);
+                let title = args.useCaseId;
+                const titleMatch = toolResult.match(/^#\s+(.+)$/m);
+                if (titleMatch) title = titleMatch[1].trim();
+                
+                const uc = useCasesCache.find(u => u.id === args.useCaseId);
+                citations.push({
+                  id: args.useCaseId,
+                  title: title,
+                  description: uc ? uc.description : ""
+                });
+              }
+            }
+
+            currentStep.status = 'completed';
+            currentStep.result = toolResult;
+            triggerUpdate();
+          } catch (err) {
+            console.error("Tool execution failed:", err);
+            toolResult = { error: err.message };
+            currentStep.status = 'failed';
+            currentStep.error = err.message;
+            triggerUpdate();
+          }
         }
 
         responseParts.push({
@@ -805,35 +1060,4 @@ async function runDinoChatAgent(userMessage, chatHistory, onStepUpdate, onTextSt
   }
 }
 
-/**
- * Safely prunes large tool response results from previous loops to minimize request token sizes.
- * Keeps the very last entry (the current turn's tool response) intact.
- */
-function pruneHistory(historyArray) {
-  if (!historyArray || historyArray.length <= 1) return;
-
-  // We prune everything except the last element
-  for (let i = 0; i < historyArray.length - 1; i++) {
-    const turn = historyArray[i];
-    if (turn.role === "user" && turn.parts) {
-      for (const part of turn.parts) {
-        if (part.functionResponse && part.functionResponse.response) {
-          const name = part.functionResponse.name;
-          const result = part.functionResponse.response.result;
-
-          // If the result is a string or object, and is large, prune it
-          if (result) {
-            const strLen = typeof result === 'string' ? result.length : JSON.stringify(result).length;
-            if (strLen > 1000) {
-              part.functionResponse.response.result = {
-                _pruned: true,
-                summary: `[Tool result of ${name} pruned. Length: ${strLen} characters. Refer to previous thoughts for details.]`
-              };
-            }
-          }
-        }
-      }
-    }
-  }
-}
 

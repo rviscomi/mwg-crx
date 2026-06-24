@@ -67,14 +67,6 @@ async function loadAndRestoreChat() {
   return false;
 }
 
-function unescapeHtmlEntities(str) {
-  return str
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&");
-}
-
 function appendScreenshotAttachment(screenshotObj, bubble) {
   if (!screenshotObj || !screenshotObj.screenshot || !bubble) return;
   
@@ -101,89 +93,6 @@ function appendScreenshotAttachment(screenshotObj, bubble) {
   bubble.appendChild(screenshotDiv);
 }
 
-// Highlight function for marked
-function highlightCode(code, lang) {
-  if (!code) return "";
-  
-  // Normalize code token/object to string if passed by marked as object
-  if (code && typeof code === "object") {
-    code = code.text || code.code || String(code);
-  }
-  if (typeof code !== "string") {
-    code = String(code);
-  }
-
-  lang = (lang || "").toLowerCase();
-
-  // Escape HTML first
-  let escaped = code
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-  if (lang === "html" || lang === "xml") {
-    // Highlight script block contents (JS)
-    escaped = escaped.replace(/(&lt;script\b[\s\S]*?&gt;)([\s\S]*?)(&lt;\/script&gt;)/g, (match, openTag, scriptContent, closeTag) => {
-      const rawScript = unescapeHtmlEntities(scriptContent);
-      const highlightedScript = highlightCode(rawScript, "javascript");
-      return openTag + highlightedScript + closeTag;
-    });
-
-    // Highlight style block contents (CSS)
-    escaped = escaped.replace(/(&lt;style\b[\s\S]*?&gt;)([\s\S]*?)(&lt;\/style&gt;)/g, (match, openTag, styleContent, closeTag) => {
-      const rawStyle = unescapeHtmlEntities(styleContent);
-      const highlightedStyle = highlightCode(rawStyle, "css");
-      return openTag + highlightedStyle + closeTag;
-    });
-
-    // Highlight tag blocks
-    escaped = escaped.replace(/(&lt;[\s\S]*?&gt;)/g, (tag) => {
-      let highlightedTag = tag;
-      highlightedTag = highlightedTag.replace(/(&quot;[\s\S]*?&quot;|'[^']*')/g, '<span class="hl-string">$1</span>');
-      highlightedTag = highlightedTag.replace(/^(&lt;\/?)([a-zA-Z0-9:-]+)/, '$1<span class="hl-tag">$2</span>');
-      highlightedTag = highlightedTag.replace(/\b([a-zA-Z0-9:-]+)(?=\s*=)(?![^<]*>)/g, '<span class="hl-attr">$1</span>');
-      return highlightedTag;
-    });
-    // Highlight comments
-    escaped = escaped.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="hl-comment">$1</span>');
-  } else if (lang === "css") {
-    escaped = escaped.replace(/(\/\*[\s\S]*?\*\/)|([\w-]+)(?=\s*:)|(:\s*)([^;\}]+)/g, (match, comment, prop, colon, val) => {
-      if (comment) {
-        return `<span class="hl-comment">${comment}</span>`;
-      }
-      if (prop) {
-        return `<span class="hl-property">${prop}</span>`;
-      }
-      if (colon && val) {
-        return `${colon}<span class="hl-value">${val}</span>`;
-      }
-      return match;
-    });
-  } else {
-    // Default: JS/TS
-    const keywords = [
-      "const", "let", "var", "function", "return", "if", "else", 
-      "for", "while", "switch", "case", "break", "class", "export", 
-      "import", "from", "async", "await", "try", "catch", "new", 
-      "throw", "instanceof", "typeof"
-    ];
-    const regex = new RegExp(`(\\/\\*[\\s\\S]*?\\*\\/|\\/\\/.*|&quot;[\\s\\S]*?&quot;|'[^']*'|\\\`[\\s\\S]*?\\\`)|\\b(${keywords.join("|")})\\b`, "g");
-    
-    escaped = escaped.replace(regex, (match, literal, keyword) => {
-      if (literal) {
-        if (literal.startsWith("//") || literal.startsWith("/*")) {
-          return `<span class="hl-comment">${literal}</span>`;
-        } else {
-          return `<span class="hl-string">${literal}</span>`;
-        }
-      }
-      return `<span class="hl-keyword">${keyword}</span>`;
-    });
-  }
-
-  return escaped;
-}
 
 // Customize marked code block renderer to support custom syntax highlighting
 const renderer = new marked.Renderer();
@@ -228,16 +137,16 @@ function renderDinoResponse(content, container) {
   // Pre-process custom protocols to raw HTML links to bypass marked parser filter
   let processed = content || "";
   processed = processed.replace(/===\s*RESPONSE\s*===/gi, "");
-  processed = processed.replace(/\[([^\]]+)\]\((suggest:[^)]+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((suggest:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
-  processed = processed.replace(/\[([^\]]+)\]\((inspect:[^)]+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((inspect:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
-  processed = processed.replace(/\[([^\]]+)\]\((useCaseId:[^)]+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((useCaseId:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
-  processed = processed.replace(/\[([^\]]+)\]\((source:[^)]+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((source:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
 
@@ -437,7 +346,11 @@ function renderDinoResponse(content, container) {
       }
     });
   });
+
+  // Bind interactive code tags for element highlights/inspections inside HTML/code blocks
+  bindInteractiveCodeTags(container);
 }
+
 
 document.addEventListener("DOMContentLoaded", () => {
   const chatTab = document.querySelector('[data-tab="chat"]');
@@ -1142,6 +1055,9 @@ async function handleSendChatMessage() {
       message,
       chatHistory,
       (steps) => {
+        const chatMessages = document.getElementById("chat-messages");
+        const isAtBottom = chatMessages ? (chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 15) : false;
+
         chatSteps = steps;
         renderSteps(steps, modelMsgBubble, true);
         
@@ -1172,10 +1088,14 @@ async function handleSendChatMessage() {
           }
         }
         
-        const chatMessages = document.getElementById("chat-messages");
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (chatMessages && isAtBottom) {
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
       },
       (textChunk) => {
+        const chatMessages = document.getElementById("chat-messages");
+        const isAtBottom = chatMessages ? (chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 15) : false;
+
         streamedText += textChunk;
         
         const { thoughts, userContent } = parseStreamContent(streamedText);
@@ -1213,10 +1133,15 @@ async function handleSendChatMessage() {
             responseContent.innerHTML = "";
           }
         }
-        const chatMessages = document.getElementById("chat-messages");
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        if (chatMessages && isAtBottom) {
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
       }
     );
+
+    const chatMessages = document.getElementById("chat-messages");
+    const isAtBottom = chatMessages ? (chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 15) : false;
 
     // Collapse the thought container
     const thoughtContainer = modelMsgBubble.querySelector(".dino-thought-container");
@@ -1293,8 +1218,9 @@ async function handleSendChatMessage() {
 
     addMessageActions(modelMsgBubble, response);
 
-    const chatMessages = document.getElementById("chat-messages");
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (chatMessages && isAtBottom) {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 
   } catch (err) {
     // Collapse thought process container on error
@@ -1466,5 +1392,15 @@ function parseStreamContent(text) {
   const parsed = parseThoughtAndContent(text);
   return { thoughts: parsed.thoughts, userContent: parsed.response };
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    renderDinoResponse,
+    escapeHtmlForChat,
+    inspectPageElement,
+    parseStreamContent
+  };
+}
+
 
 
