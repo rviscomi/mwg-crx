@@ -6,6 +6,15 @@ let voiceWindowId = null;
 let historyIndex = -1;
 let tempInput = "";
 
+function safeDecodeURIComponent(str) {
+  if (!str) return "";
+  try {
+    return decodeURIComponent(str);
+  } catch (e) {
+    return str;
+  }
+}
+
 // --- Persistence Helpers ---
 
 function normalizeUrlForStorage(rawUrl) {
@@ -137,16 +146,16 @@ function renderDinoResponse(content, container) {
   // Pre-process custom protocols to raw HTML links to bypass marked parser filter
   let processed = content || "";
   processed = processed.replace(/===\s*RESPONSE\s*===/gi, "");
-  processed = processed.replace(/\[([^\]]+)\]\((suggest:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((suggest:[^()]*(?:\([^()]*\)[^()]*)*)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
-  processed = processed.replace(/\[([^\]]+)\]\((inspect:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((inspect:[^()]*(?:\([^()]*\)[^()]*)*)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
-  processed = processed.replace(/\[([^\]]+)\]\((useCaseId:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((useCaseId:[^()]*(?:\([^()]*\)[^()]*)*)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
-  processed = processed.replace(/\[([^\]]+)\]\((source:(?:[^()]+|\([^()]*\))+)\)/g, (match, label, url) => {
+  processed = processed.replace(/\[([^\]]+)\]\((source:[^()]*(?:\([^()]*\)[^()]*)*)\)/g, (match, label, url) => {
     return `<a href="${escapeHtmlForChat(url)}">${escapeHtmlForChat(label)}</a>`;
   });
 
@@ -154,31 +163,44 @@ function renderDinoResponse(content, container) {
   
   // Bind [Label](source:URL?line=LINE) or (source:URL:LINE) links
   container.querySelectorAll('a[href^="source:"]').forEach(link => {
-    const href = link.getAttribute("href");
-    const rawUrl = decodeURIComponent(href.substring(7));
-    
-    link.className = "source-link-btn";
-    link.removeAttribute("href");
-    link.style.cursor = "pointer";
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        let fileUrl = rawUrl;
-        let lineNum = 0;
-        let colNum = 0;
-        
+    try {
+      if (link.closest('pre, code')) return;
+      const href = link.getAttribute("href");
+      if (!href) return;
+      const rawUrl = safeDecodeURIComponent(href.substring(7));
+      
+      link.className = "source-link-btn";
+      link.removeAttribute("href");
+      link.style.cursor = "pointer";
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         try {
-          const urlObj = new URL(rawUrl);
-          if (urlObj.searchParams.has("line")) {
-            lineNum = parseInt(urlObj.searchParams.get("line"), 10) - 1;
-            if (urlObj.searchParams.has("column")) {
-              colNum = parseInt(urlObj.searchParams.get("column"), 10) - 1;
+          let fileUrl = rawUrl;
+          let lineNum = 0;
+          let colNum = 0;
+          
+          try {
+            const urlObj = new URL(rawUrl);
+            if (urlObj.searchParams.has("line")) {
+              lineNum = parseInt(urlObj.searchParams.get("line"), 10) - 1;
+              if (urlObj.searchParams.has("column")) {
+                colNum = parseInt(urlObj.searchParams.get("column"), 10) - 1;
+              }
+              urlObj.searchParams.delete("line");
+              urlObj.searchParams.delete("column");
+              fileUrl = urlObj.href;
+            } else {
+              const match = rawUrl.match(/:(\d+)(?::(\d+))?$/);
+              if (match) {
+                lineNum = parseInt(match[1], 10) - 1;
+                if (match[2]) {
+                  colNum = parseInt(match[2], 10) - 1;
+                }
+                fileUrl = rawUrl.substring(0, match.index);
+              }
             }
-            urlObj.searchParams.delete("line");
-            urlObj.searchParams.delete("column");
-            fileUrl = urlObj.href;
-          } else {
+          } catch (urlErr) {
             const match = rawUrl.match(/:(\d+)(?::(\d+))?$/);
             if (match) {
               lineNum = parseInt(match[1], 10) - 1;
@@ -188,167 +210,180 @@ function renderDinoResponse(content, container) {
               fileUrl = rawUrl.substring(0, match.index);
             }
           }
-        } catch (urlErr) {
-          const match = rawUrl.match(/:(\d+)(?::(\d+))?$/);
-          if (match) {
-            lineNum = parseInt(match[1], 10) - 1;
-            if (match[2]) {
-              colNum = parseInt(match[2], 10) - 1;
-            }
-            fileUrl = rawUrl.substring(0, match.index);
+
+          if (lineNum < 0) lineNum = 0;
+          if (colNum < 0) colNum = 0;
+
+          if (colNum > 0) {
+            chrome.devtools.panels.openResource(fileUrl, lineNum, colNum, (result) => {
+              if (result && result.status === "error") {
+                showToast(`Could not open source: ${result.message || 'unknown error'}`, "error");
+              }
+            });
+          } else {
+            chrome.devtools.panels.openResource(fileUrl, lineNum, (result) => {
+              if (result && result.status === "error") {
+                showToast(`Could not open source: ${result.message || 'unknown error'}`, "error");
+              }
+            });
           }
+        } catch (err) {
+          console.error("Dino open source click failed:", err);
+          showToast(`Failed to open source: ${err.message}`, "error");
         }
-
-        if (lineNum < 0) lineNum = 0;
-        if (colNum < 0) colNum = 0;
-
-        if (colNum > 0) {
-          chrome.devtools.panels.openResource(fileUrl, lineNum, colNum, (result) => {
-            if (result && result.status === "error") {
-              showToast(`Could not open source: ${result.message || 'unknown error'}`, "error");
-            }
-          });
-        } else {
-          chrome.devtools.panels.openResource(fileUrl, lineNum, (result) => {
-            if (result && result.status === "error") {
-              showToast(`Could not open source: ${result.message || 'unknown error'}`, "error");
-            }
-          });
-        }
-      } catch (err) {
-        console.error("Dino open source click failed:", err);
-        showToast(`Failed to open source: ${err.message}`, "error");
-      }
-    });
+      });
+    } catch (err) {
+      console.error("Failed to bind source link:", err);
+    }
   });
 
   // Bind [Inspect: CSS_SELECTOR](inspect:CSS_SELECTOR) links
   container.querySelectorAll('a[href^="inspect:"]').forEach(link => {
-    const href = link.getAttribute("href");
-    const selector = normalizeSelector(decodeURIComponent(href.substring(8)));
-    
-    // Check if this inspect link is part of a suggestion button group
-    const isButtonGroup = link.parentElement && (
-      link.parentElement.querySelector('a.chat-suggest-btn') ||
-      link.parentElement.querySelector('a[href^="suggest:"]')
-    );
+    try {
+      if (link.closest('pre, code')) return;
+      const href = link.getAttribute("href");
+      if (!href) return;
+      const selector = normalizeSelector(safeDecodeURIComponent(href.substring(8)));
+      
+      // Check if this inspect link is part of a suggestion button group
+      const isButtonGroup = link.parentElement && (
+        link.parentElement.querySelector('a.chat-suggest-btn') ||
+        link.parentElement.querySelector('a[href^="suggest:"]')
+      );
 
-    if (isButtonGroup) {
-      link.className = "chat-suggest-btn";
-    } else {
-      link.className = "target-link-btn";
+      if (isButtonGroup) {
+        link.className = "chat-suggest-btn";
+      } else {
+        link.className = "target-link-btn";
+      }
+
+      link.removeAttribute("href");
+      link.style.cursor = "pointer";
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          inspectPageElement(selector);
+        } catch (err) {
+          console.error("Dino inspect element click failed:", err);
+          showToast(`Failed to inspect element: ${err.message}`, "error");
+        }
+      });
+      link.addEventListener("mouseenter", () => {
+        try {
+          highlightElementOnPage(selector);
+        } catch (err) {
+          console.error("Dino element highlight failed:", err);
+        }
+      });
+      link.addEventListener("mouseleave", () => {
+        try {
+          removeHighlightFromPage();
+        } catch (err) {
+          console.error("Dino remove highlight failed:", err);
+        }
+      });
+    } catch (err) {
+      console.error("Failed to bind inspect link:", err);
     }
-
-    link.removeAttribute("href");
-    link.style.cursor = "pointer";
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        inspectPageElement(selector);
-      } catch (err) {
-        console.error("Dino inspect element click failed:", err);
-        showToast(`Failed to inspect element: ${err.message}`, "error");
-      }
-    });
-    link.addEventListener("mouseenter", () => {
-      try {
-        highlightElementOnPage(selector);
-      } catch (err) {
-        console.error("Dino element highlight failed:", err);
-      }
-    });
-    link.addEventListener("mouseleave", () => {
-      try {
-        removeHighlightFromPage();
-      } catch (err) {
-        console.error("Dino remove highlight failed:", err);
-      }
-    });
   });
 
   // Bind [Label](suggest:message) suggestion buttons
   container.querySelectorAll('a[href^="suggest:"]').forEach(link => {
-    const href = link.getAttribute("href");
-    const suggestionText = decodeURIComponent(href.substring(8));
-    link.className = "chat-suggest-btn";
-    link.removeAttribute("href");
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      try {
-        const chatInput = document.getElementById("chat-input");
-        if (chatInput) {
-          chatInput.value = suggestionText;
-          handleSendChatMessage();
+    try {
+      if (link.closest('pre, code')) return;
+      const href = link.getAttribute("href");
+      if (!href) return;
+      const suggestionText = safeDecodeURIComponent(href.substring(8));
+      link.className = "chat-suggest-btn";
+      link.removeAttribute("href");
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        try {
+          const chatInput = document.getElementById("chat-input");
+          if (chatInput) {
+            chatInput.value = suggestionText;
+            handleSendChatMessage();
+          }
+        } catch (err) {
+          console.error("Dino suggestion button click failed:", err);
+          showToast(`Failed to trigger suggestion: ${err.message}`, "error");
         }
-      } catch (err) {
-        console.error("Dino suggestion button click failed:", err);
-        showToast(`Failed to trigger suggestion: ${err.message}`, "error");
-      }
-    });
+      });
+    } catch (err) {
+      console.error("Failed to bind suggestion link:", err);
+    }
   });
 
   // Bind [Label](useCaseId:useCaseId) guide links
   container.querySelectorAll('a[href^="useCaseId:"]').forEach(link => {
-    const href = link.getAttribute("href");
-    const targetGuide = decodeURIComponent(href.substring(10));
-    link.className = "guide-link-btn";
-    link.removeAttribute("href");
-    link.style.cursor = "pointer";
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        let guideId = targetGuide;
-        let anchor = "";
-        const hashIdx = targetGuide.indexOf("#");
-        if (hashIdx !== -1) {
-          guideId = targetGuide.substring(0, hashIdx);
-          anchor = targetGuide.substring(hashIdx);
-        }
-        
-        let uc = useCasesCache.find(u => u.id === guideId);
-        if (!uc && guideId) {
-          const matchingUcs = useCasesCache
-            .filter(u => guideId.startsWith(u.id))
-            .sort((a, b) => b.id.length - a.id.length);
-          if (matchingUcs.length > 0) {
-            const matchingUc = matchingUcs[0];
-            uc = matchingUc;
-            const rest = guideId.substring(matchingUc.id.length);
-            anchor = `#${rest.replace(/^[-_]+/, "")}`;
-            guideId = matchingUc.id;
+    try {
+      if (link.closest('pre, code')) return;
+      const href = link.getAttribute("href");
+      if (!href) return;
+      const targetGuide = safeDecodeURIComponent(href.substring(10));
+      link.className = "guide-link-btn";
+      link.removeAttribute("href");
+      link.style.cursor = "pointer";
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          let guideId = targetGuide;
+          let anchor = "";
+          const hashIdx = targetGuide.indexOf("#");
+          if (hashIdx !== -1) {
+            guideId = targetGuide.substring(0, hashIdx);
+            anchor = targetGuide.substring(hashIdx);
           }
-        }
+          
+          let uc = useCasesCache.find(u => u.id === guideId);
+          if (!uc && guideId) {
+            const matchingUcs = useCasesCache
+              .filter(u => guideId.startsWith(u.id))
+              .sort((a, b) => b.id.length - a.id.length);
+            if (matchingUcs.length > 0) {
+              const matchingUc = matchingUcs[0];
+              uc = matchingUc;
+              const rest = guideId.substring(matchingUc.id.length);
+              anchor = `#${rest.replace(/^[-_]+/, "")}`;
+              guideId = matchingUc.id;
+            }
+          }
 
-        const category = uc ? uc.category : "user-experience";
-        const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${guideId}.md${anchor}`;
-        chrome.tabs.create({ url });
-        showToast(`Opening GitHub guide for ${guideId}...`, "success");
-      } catch (err) {
-        showToast(`Failed to open guide: ${err.message}`, "error");
-      }
-    });
+          const category = uc ? uc.category : "user-experience";
+          const url = `https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/${category}/${guideId}.md${anchor}`;
+          chrome.tabs.create({ url });
+          showToast(`Opening GitHub guide for ${guideId}...`, "success");
+        } catch (err) {
+          showToast(`Failed to open guide: ${err.message}`, "error");
+        }
+      });
+    } catch (err) {
+      console.error("Failed to bind guide link:", err);
+    }
   });
 
   // Bind standard HTTP/HTTPS links to open in a new tab via chrome.tabs.create
   container.querySelectorAll('a[href^="http://"], a[href^="https://"]').forEach(link => {
-    link.setAttribute("target", "_blank");
-    link.setAttribute("rel", "noopener noreferrer");
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const url = link.getAttribute("href");
-      if (url) {
-        chrome.tabs.create({ url });
-      }
-    });
+    try {
+      if (link.closest('pre, code')) return;
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer");
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const url = link.getAttribute("href");
+        if (url) {
+          chrome.tabs.create({ url });
+        }
+      });
+    } catch (err) {
+      console.error("Failed to bind standard HTTP/HTTPS link:", err);
+    }
   });
-
-  // Bind interactive code tags for element highlights/inspections inside HTML/code blocks
-  bindInteractiveCodeTags(container);
 }
 
 

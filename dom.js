@@ -1829,40 +1829,6 @@ function unescapeHtmlEntities(str) {
     .replace(/&amp;/g, "&");
 }
 
-function extractSelectorFromTag(tagStr) {
-  const raw = unescapeHtmlEntities(tagStr);
-  const tagNameMatch = raw.match(/^<\/?([a-zA-Z0-9:-]+)/);
-  if (!tagNameMatch) return null;
-  const tagName = tagNameMatch[1];
-
-  const idMatch = raw.match(/\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/);
-  if (idMatch) {
-    const idVal = idMatch[1] || idMatch[2];
-    if (idVal) return `#${idVal}`;
-  }
-
-  const classMatch = raw.match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/);
-  if (classMatch) {
-    const classVal = classMatch[1] || classMatch[2];
-    if (classVal) {
-      const classes = classVal.trim().split(/\s+/).filter(Boolean);
-      if (classes.length > 0) {
-        return `${tagName}.${classes.join('.')}`;
-      }
-    }
-  }
-
-  const nameMatch = raw.match(/\bname\s*=\s*(?:"([^"]*)"|'([^']*)')/);
-  if (nameMatch) {
-    const nameVal = nameMatch[1] || nameMatch[2];
-    if (nameVal) {
-      return `${tagName}[name="${nameVal}"]`;
-    }
-  }
-
-  return tagName;
-}
-
 function highlightCode(code, lang) {
   if (!code) return "";
   
@@ -1900,12 +1866,6 @@ function highlightCode(code, lang) {
       highlightedTag = highlightedTag.replace(/^(&lt;\/?)([a-zA-Z0-9:-]+)/, '$1<span class="hl-tag">$2</span>');
       highlightedTag = highlightedTag.replace(/\b([a-zA-Z0-9:-]+)(?=\s*=)(?![^<]*>)/g, '<span class="hl-attr">$1</span>');
 
-      if (!tag.startsWith("&lt;/")) {
-        const selector = extractSelectorFromTag(tag);
-        if (selector) {
-          return `<span class="interactive-code-tag" data-selector="${escapeHtmlLocal(selector)}">${highlightedTag}</span>`;
-        }
-      }
       return highlightedTag;
     });
     escaped = escaped.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="hl-comment">$1</span>');
@@ -1948,60 +1908,5 @@ function highlightCode(code, lang) {
   return escaped;
 }
 
-function escapeHtmlLocal(str) {
-  if (!str) return "";
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function bindInteractiveCodeTags(container) {
-  container.querySelectorAll('.interactive-code-tag').forEach(tagEl => {
-    const selector = tagEl.dataset.selector;
-    if (!selector) return;
-
-    tagEl.style.cursor = "pointer";
-    tagEl.title = `Click to inspect ${selector} in Elements panel`;
-    
-    tagEl.addEventListener("mouseenter", (e) => {
-      e.stopPropagation();
-      highlightElementOnPage(selector);
-    });
-    tagEl.addEventListener("mouseleave", (e) => {
-      e.stopPropagation();
-      removeHighlightFromPage();
-    });
-
-    tagEl.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      chrome.devtools.inspectedWindow.eval(
-        `(() => {
-          const selector = ${JSON.stringify(selector)};
-          try {
-            const el = document.querySelector(selector);
-            if (el) {
-              inspect(el);
-              return { found: true };
-            }
-            return { found: false };
-          } catch (e) {
-            return { error: e.message };
-          }
-        })()`,
-        (result, isException) => {
-          if (isException || (result && result.error)) {
-            showToast(`This target is a descriptive label: "${selector}"`, "info");
-          } else if (result && !result.found) {
-            showToast(`Could not find element matching "${selector}" on active page.`, "warning");
-          }
-        }
-      );
-    });
-  });
-}
 
 

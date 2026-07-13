@@ -53,7 +53,6 @@ global.window = {
 
 global.normalizeSelector = (sel) => sel ? sel.trim() : "";
 global.useCasesCache = [];
-global.bindInteractiveCodeTags = vi.fn();
 global.highlightCode = (code, lang) => code;
 
 const { renderDinoResponse, escapeHtmlForChat } = require('../chat.js');
@@ -61,10 +60,12 @@ const { renderDinoResponse, escapeHtmlForChat } = require('../chat.js');
 describe('chat.js - Link Rendering and Event Binding', () => {
   let container;
   let boundEvents;
+  let isInsideCodeBlock = false;
 
   beforeEach(() => {
     vi.clearAllMocks();
     boundEvents = [];
+    isInsideCodeBlock = false;
     
     // Create a mock DOM container
     container = {
@@ -104,6 +105,10 @@ describe('chat.js - Link Rendering and Event Binding', () => {
       removeAttribute: (name) => { delete attrs[name]; },
       addEventListener: (event, handler) => {
         boundEvents.push({ event, handler, link });
+      },
+      closest: (sel) => {
+        if (sel === 'pre, code' && isInsideCodeBlock) return {};
+        return null;
       },
       parentElement: {
         querySelector: vi.fn().mockImplementation((query) => {
@@ -162,6 +167,42 @@ describe('chat.js - Link Rendering and Event Binding', () => {
     const evalCode = global.chrome.devtools.inspectedWindow.eval.mock.calls[0][0];
     expect(evalCode).toContain('.elementor-widget-button a');
   });
+
+  it('should not crash if inspect link contains malformed URI percent-encoding', () => {
+    const content = "[this element](inspect:div#main > %)";
+    
+    // This should run without throwing URIError: URI malformed
+    expect(() => {
+      renderDinoResponse(content, container);
+    }).not.toThrow();
+  });
+
+  it('should not crash on incomplete suggest link', () => {
+    const content = "[⚡ Optimize Markdown Images](suggest:";
+    expect(() => {
+      renderDinoResponse(content, container);
+    }).not.toThrow();
+  });
+
+  it('should not crash on any prefix of a streaming response containing links and percentages', () => {
+    const responseText = "Over 51.7% of the CSS downloaded on this page is completely unused! [⚡ Optimize Markdown Images](suggest:Optimize Markdown Images)";
+    for (let i = 1; i <= responseText.length; i++) {
+      const prefix = responseText.substring(0, i);
+      expect(() => {
+        renderDinoResponse(prefix, container);
+      }).not.toThrow(`Failed on prefix index ${i}: "${prefix}"`);
+    }
+  });
+
+  it('should not bind click handlers or style links that are inside pre or code tags', () => {
+    isInsideCodeBlock = true;
+    const content = "[👀 Inspect Focus Styles](inspect:.elementor-widget-button a) [✨ Apply Focus Fix](suggest:Add a high-contrast focus-visible outline)";
+    
+    renderDinoResponse(content, container);
+    
+    // Should not bind any events since closest('pre, code') returns an element
+    expect(boundEvents.length).toBe(0);
+  });
 });
 
 describe('dom.js - Tag Parsing and Code Highlighting', () => {
@@ -181,45 +222,17 @@ describe('dom.js - Tag Parsing and Code Highlighting', () => {
     };
     vm.createContext(sandbox);
     vm.runInContext(domCode, sandbox);
-    global.extractSelectorFromTag = sandbox.extractSelectorFromTag;
     global.highlightCode = sandbox.highlightCode;
     global.unescapeHtmlEntities = sandbox.unescapeHtmlEntities;
-    global.bindInteractiveCodeTags = sandbox.bindInteractiveCodeTags;
   });
 
-  describe('extractSelectorFromTag', () => {
-    it('should extract selector from tags with ID', () => {
-      const tag = '&lt;input id=&quot;account-search&quot; class=&quot;SearchInput&quot; type=&quot;text&quot;&gt;';
-      const selector = extractSelectorFromTag(tag);
-      expect(selector).toBe('#account-search');
-    });
-
-    it('should extract selector from tags with classes but no ID', () => {
-      const tag = '&lt;label class=&quot;visually-hidden some-other-class&quot;&gt;&lt;/label&gt;';
-      const selector = extractSelectorFromTag(tag);
-      expect(selector).toBe('label.visually-hidden.some-other-class');
-    });
-
-    it('should extract selector from tags with name but no ID or class', () => {
-      const tag = '&lt;input name=&quot;username&quot; type=&quot;text&quot;&gt;';
-      const selector = extractSelectorFromTag(tag);
-      expect(selector).toBe('input[name="username"]');
-    });
-
-    it('should fallback to tag name if no identifying attributes', () => {
-      const tag = '&lt;label&gt;';
-      const selector = extractSelectorFromTag(tag);
-      expect(selector).toBe('label');
-    });
-  });
-
-  describe('highlightCode with interactive tags', () => {
-    it('should wrap opening tag in interactive-code-tag span with extracted selector', () => {
+  describe('highlightCode with interactive tags (disabled)', () => {
+    it('should not wrap opening tag in interactive-code-tag span', () => {
       const code = '<input id="account-search" class="SearchInput">';
       const highlighted = highlightCode(code, 'html');
       
-      expect(highlighted).toContain('class="interactive-code-tag"');
-      expect(highlighted).toContain('data-selector="#account-search"');
+      expect(highlighted).not.toContain('class="interactive-code-tag"');
+      expect(highlighted).not.toContain('data-selector="#account-search"');
     });
 
     it('should not wrap closing tags in interactive-code-tag span', () => {
