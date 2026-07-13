@@ -60,11 +60,13 @@ const { renderDinoResponse, escapeHtmlForChat } = require('../chat.js');
 describe('chat.js - Link Rendering and Event Binding', () => {
   let container;
   let boundEvents;
+  let createdLinks;
   let isInsideCodeBlock = false;
 
   beforeEach(() => {
     vi.clearAllMocks();
     boundEvents = [];
+    createdLinks = [];
     isInsideCodeBlock = false;
     
     // Create a mock DOM container
@@ -87,6 +89,8 @@ describe('chat.js - Link Rendering and Event Binding', () => {
           if (query === 'a[href^="inspect:"]' && href.startsWith('inspect:')) {
             elements.push(createMockLink(href, label));
           } else if (query === 'a[href^="suggest:"]' && href.startsWith('suggest:')) {
+            elements.push(createMockLink(href, label));
+          } else if (query === 'a[href]') {
             elements.push(createMockLink(href, label));
           }
         }
@@ -120,6 +124,7 @@ describe('chat.js - Link Rendering and Event Binding', () => {
         })
       }
     };
+    createdLinks.push(link);
     return link;
   }
 
@@ -190,8 +195,24 @@ describe('chat.js - Link Rendering and Event Binding', () => {
       const prefix = responseText.substring(0, i);
       expect(() => {
         renderDinoResponse(prefix, container);
+        renderDinoResponse(prefix, container, { streaming: true });
       }).not.toThrow(`Failed on prefix index ${i}: "${prefix}"`);
     }
+  });
+
+  it('should not bind listeners while streaming, but style links and strip hrefs', () => {
+    const content = "[👀 Inspect Focus Styles](inspect:.elementor-widget-button a) [✨ Apply Focus Fix](suggest:Add a high-contrast focus-visible outline)";
+
+    renderDinoResponse(content, container, { streaming: true });
+
+    expect(boundEvents.length).toBe(0);
+    expect(createdLinks.length).toBe(2);
+    const classNames = createdLinks.map(l => l.className).sort();
+    expect(classNames).toEqual(['chat-suggest-btn', 'target-link-btn']);
+    // hrefs are stripped so clicks cannot navigate the panel mid-stream
+    createdLinks.forEach(link => {
+      expect(link.getAttribute('href')).toBeUndefined();
+    });
   });
 
   it('should not bind click handlers or style links that are inside pre or code tags', () => {

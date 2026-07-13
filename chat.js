@@ -142,7 +142,7 @@ function inspectPageElement(selector) {
   );
 }
 
-function renderDinoResponse(content, container) {
+function renderDinoResponse(content, container, options = {}) {
   // Pre-process custom protocols to raw HTML links to bypass marked parser filter
   let processed = content || "";
   processed = processed.replace(/===\s*RESPONSE\s*===/gi, "");
@@ -160,7 +160,27 @@ function renderDinoResponse(content, container) {
   });
 
   container.innerHTML = marked.parse(processed);
-  
+
+  // While streaming, this DOM is replaced on the next chunk, so binding
+  // listeners is wasted work (and the only path feeding truncated URIs into
+  // decoding). Apply button styling by protocol and strip hrefs so a click
+  // can't navigate the panel; the final render binds everything for real.
+  if (options.streaming) {
+    container.querySelectorAll("a[href]").forEach(link => {
+      try {
+        const href = link.getAttribute("href") || "";
+        if (href.startsWith("suggest:")) link.className = "chat-suggest-btn";
+        else if (href.startsWith("inspect:")) link.className = "target-link-btn";
+        else if (href.startsWith("useCaseId:")) link.className = "guide-link-btn";
+        else if (href.startsWith("source:")) link.className = "source-link-btn";
+        link.removeAttribute("href");
+      } catch (err) {
+        console.error("Failed to neutralize streaming link:", err);
+      }
+    });
+    return;
+  }
+
   // Bind [Label](source:URL?line=LINE) or (source:URL:LINE) links
   container.querySelectorAll('a[href^="source:"]').forEach(link => {
     try {
@@ -1084,6 +1104,14 @@ async function handleSendChatMessage() {
 
   let chatSteps = [];
   let streamedText = "";
+  let pendingStreamRender = null;
+
+  const cancelPendingStreamRender = () => {
+    if (pendingStreamRender !== null) {
+      cancelAnimationFrame(pendingStreamRender);
+      pendingStreamRender = null;
+    }
+  };
 
   try {
     const { response, citations } = await runDinoChatAgent(
@@ -1102,8 +1130,10 @@ async function handleSendChatMessage() {
           const runningTool = toolSteps.find(s => s.status === 'running');
           
           if (runningTool) {
-            // Clear any streamed final text because we are running tools
-            streamedText = ""; 
+            // Clear any streamed final text because we are running tools;
+            // drop any queued stream render so it can't wipe the indicator
+            cancelPendingStreamRender();
+            streamedText = "";
             
             // Clear the HTML of the main response bubble
             responseContent.innerHTML = "";
@@ -1128,52 +1158,63 @@ async function handleSendChatMessage() {
         }
       },
       (textChunk) => {
-        const chatMessages = document.getElementById("chat-messages");
-        const isAtBottom = chatMessages ? (chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 15) : false;
-
         streamedText += textChunk;
-        
-        const { thoughts, userContent } = parseStreamContent(streamedText);
-        
-        // Render thoughts in the thought steps log if present
-        if (thoughts) {
-          const streamingSteps = [
-            ...chatSteps,
-            {
-              type: 'thought',
-              title: 'Thinking',
-              details: thoughts,
-              status: 'completed'
-            }
-          ];
-          renderSteps(streamingSteps, modelMsgBubble, true);
-        } else {
-          // Hide thought container if it's empty
-          const detailsEl = modelMsgBubble.querySelector(".dino-thought-container");
-          if (detailsEl && !detailsEl.querySelector(".dino-steps-list")?.children.length) {
-            detailsEl.remove();
-          }
-        }
-        
-        const responseContent = modelMsgBubble.querySelector(".dino-response-content");
-        if (responseContent) {
-          const typingIndicator = responseContent.querySelector(".typing-indicator");
-          if (typingIndicator) {
-            typingIndicator.remove();
-          }
-          
-          if (userContent) {
-            renderDinoResponse(userContent, responseContent);
+
+        // Chunks arrive far faster than frames, and each render re-parses the
+        // full accumulated text (O(n^2) over the stream), so coalesce to at
+        // most one render per animation frame.
+        if (pendingStreamRender !== null) return;
+        pendingStreamRender = requestAnimationFrame(() => {
+          pendingStreamRender = null;
+
+          const chatMessages = document.getElementById("chat-messages");
+          const isAtBottom = chatMessages ? (chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 15) : false;
+
+          const { thoughts, userContent } = parseStreamContent(streamedText);
+
+          // Render thoughts in the thought steps log if present
+          if (thoughts) {
+            const streamingSteps = [
+              ...chatSteps,
+              {
+                type: 'thought',
+                title: 'Thinking',
+                details: thoughts,
+                status: 'completed'
+              }
+            ];
+            renderSteps(streamingSteps, modelMsgBubble, true);
           } else {
-            responseContent.innerHTML = "";
+            // Hide thought container if it's empty
+            const detailsEl = modelMsgBubble.querySelector(".dino-thought-container");
+            if (detailsEl && !detailsEl.querySelector(".dino-steps-list")?.children.length) {
+              detailsEl.remove();
+            }
           }
-        }
-        
-        if (chatMessages && isAtBottom) {
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
+
+          const responseContent = modelMsgBubble.querySelector(".dino-response-content");
+          if (responseContent) {
+            const typingIndicator = responseContent.querySelector(".typing-indicator");
+            if (typingIndicator) {
+              typingIndicator.remove();
+            }
+
+            if (userContent) {
+              renderDinoResponse(userContent, responseContent, { streaming: true });
+            } else {
+              responseContent.innerHTML = "";
+            }
+          }
+
+          if (chatMessages && isAtBottom) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        });
       }
     );
+
+    // The stream is done; a queued frame would clobber the final bound render
+    cancelPendingStreamRender();
 
     const chatMessages = document.getElementById("chat-messages");
     const isAtBottom = chatMessages ? (chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 15) : false;
@@ -1258,6 +1299,8 @@ async function handleSendChatMessage() {
     }
 
   } catch (err) {
+    cancelPendingStreamRender();
+
     // Collapse thought process container on error
     const thoughtContainer = modelMsgBubble.querySelector(".dino-thought-container");
     if (thoughtContainer) {
