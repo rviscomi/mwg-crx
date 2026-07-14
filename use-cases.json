@@ -4,7 +4,7 @@
     "description": "Actionable coding guidelines for building accessible web applications, covering semantic HTML, focus management, forms, media, and testing. Use this skill when auditing or implementing accessibility features, keyboard navigation, or ARIA.",
     "category": "accessibility",
     "featuresUsed": [],
-    "tokenCount": 7126
+    "tokenCount": 7131
   },
   {
     "id": "accessible-error-announcement",
@@ -22,7 +22,7 @@
     "featuresUsed": [
       "Language detector"
     ],
-    "tokenCount": 939
+    "tokenCount": 944
   },
   {
     "id": "language-model",
@@ -31,7 +31,7 @@
     "featuresUsed": [
       "LanguageModel"
     ],
-    "tokenCount": 1989
+    "tokenCount": 1984
   },
   {
     "id": "summarizer",
@@ -40,7 +40,7 @@
     "featuresUsed": [
       "Summarizer"
     ],
-    "tokenCount": 1697
+    "tokenCount": 1702
   },
   {
     "id": "translator",
@@ -49,14 +49,132 @@
     "featuresUsed": [
       "Translator"
     ],
-    "tokenCount": 1570
+    "tokenCount": 1574
+  },
+  {
+    "id": "apply-webgl-shaders",
+    "description": "Apply custom visual effects with WebGL shaders to HTML content.",
+    "category": "canvas",
+    "featuresUsed": [
+      "HTML in canvas"
+    ],
+    "tokenCount": 2916
+  },
+  {
+    "id": "export-html-media-from-canvas",
+    "description": "Capture and export dynamic HTML content as images or video frames from within canvas.",
+    "category": "canvas",
+    "featuresUsed": [
+      "HTML in canvas"
+    ],
+    "tokenCount": 3283
+  },
+  {
+    "id": "expose-canvas-content-to-browser-features",
+    "description": "Expose content rendered in a canvas to browser features like assistive technologies, translation, or reading mode.",
+    "category": "canvas",
+    "featuresUsed": [
+      "HTML in canvas"
+    ],
+    "tokenCount": 4481
+  },
+  {
+    "id": "interactive-content-in-3d-scenes",
+    "description": "Integrate interactive HTML elements into a 3D scene.",
+    "category": "canvas",
+    "featuresUsed": [
+      "HTML in canvas"
+    ],
+    "tokenCount": 4192
+  },
+  {
+    "id": "adapt-scrollbar-to-contrast-preferences",
+    "description": "Enhance scrollbar visibility for users who prefer high-contrast interfaces",
+    "category": "css",
+    "featuresUsed": [
+      "scrollbar-color",
+      "prefers-contrast media query"
+    ],
+    "tokenCount": 937
+  },
+  {
+    "id": "child-state-based-styling",
+    "description": "Build a component that changes its styling based on the state of one of its child elements. For example, a component that renders in light or dark mode based on whether a theme toggle is checked (or not).",
+    "category": "css",
+    "featuresUsed": [
+      ":has()",
+      ":not()"
+    ],
+    "tokenCount": 1423
+  },
+  {
+    "id": "complex-shapes",
+    "description": "Clip elements and their content to any free-form shape, like a symbol, brush stroke, or organic texture for more expressive designs.",
+    "category": "css",
+    "featuresUsed": [
+      "Masks",
+      "SVG"
+    ],
+    "tokenCount": 1041
+  },
+  {
+    "id": "component-specific-light-dark-theme",
+    "description": "Force certain elements to be in light mode or dark mode (e.g. code blocks, media players, etc) independently of the page's color-scheme.",
+    "category": "css",
+    "featuresUsed": [
+      "color-scheme",
+      "light-dark()"
+    ],
+    "tokenCount": 2534
+  },
+  {
+    "id": "content-based-styling",
+    "description": "Build a component that changes its layout based on whether it contains specific child elements (or not). For example, if the component contains an image, use a multi-column layout, otherwise default to a single-column layout.",
+    "category": "css",
+    "featuresUsed": [
+      ":has()",
+      ":not()"
+    ],
+    "tokenCount": 1474
   },
   {
     "id": "css",
     "description": "Action-oriented guidelines for modern CSS architecture, layouts, and performance. Use this guide when authoring styles, managing design systems, or optimizing web rendering.",
     "category": "css",
     "featuresUsed": [],
-    "tokenCount": 7691
+    "tokenCount": 7755
+  },
+  {
+    "id": "customize-scrollbar-color-and-thickness",
+    "description": "Customize the color or thickness of a scrollbar",
+    "category": "css",
+    "featuresUsed": [
+      "scrollbar-color",
+      "scrollbar-width"
+    ],
+    "tokenCount": 681
+  },
+  {
+    "id": "dark-mode",
+    "description": "Implement dark mode support in a way that respects the user's light/dark theme preference and adapts browser UI (e.g. scrollbars, form controls, etc)",
+    "category": "css",
+    "featuresUsed": [
+      "color-scheme",
+      "prefers-color-scheme media query",
+      "light-dark()",
+      "accent-color"
+    ],
+    "tokenCount": 4125
+  },
+  {
+    "id": "dynamic-sibling-styling",
+    "description": "Create dynamic visual spectrums or layout arrangements that automatically adapt to the number of elements in a group.",
+    "category": "css",
+    "featuresUsed": [
+      "sibling-count() and sibling-index()",
+      "Trigonometric functions (CSS)"
+    ],
+    "tokenCount": 1045
   },
   {
     "id": "highlight-text-ranges",
@@ -68,11 +186,196 @@
     "tokenCount": 1495
   },
   {
+    "id": "interactive-content-reveal",
+    "description": "Create interactive reveal effects, such as a spotlight that follows the user's pointer to uncover details within an image or UI section.",
+    "category": "css",
+    "featuresUsed": [
+      "Masks",
+      "Registered custom properties"
+    ],
+    "tokenCount": 1365
+  },
+  {
+    "id": "reduce-style-repetition",
+    "description": "Reduce excessive style repetition by encapsulating complex or dynamic styling logic into reusable functions (such as a function that computes a gradient based on a set of input parameters).",
+    "category": "css",
+    "featuresUsed": [
+      "@function"
+    ],
+    "tokenCount": 1080
+  },
+  {
+    "id": "shaped-cutouts",
+    "description": "Combine multiple shapes to create complex cutouts or 'knockout' effects in elements, such as adding a notch to an element.",
+    "category": "css",
+    "featuresUsed": [
+      "Masks"
+    ],
+    "tokenCount": 2313
+  },
+  {
+    "id": "soft-edge-content-fade",
+    "description": "Apply a transparency gradient to content edges to indicate further scrollable areas or to obscure payment-walled text.",
+    "category": "css",
+    "featuresUsed": [
+      "Masks"
+    ],
+    "tokenCount": 672
+  },
+  {
+    "id": "style-parent-with-has",
+    "description": "Style parent elements of a form field (e.g. labels or fieldsets) when the field is invalid.",
+    "category": "css",
+    "featuresUsed": [
+      ":user-valid and :user-invalid"
+    ],
+    "tokenCount": 1932
+  },
+  {
+    "id": "visually-texture-content",
+    "description": "Apply realistic weathering and texture patterns to elements to give them an organic, aged, or physical material appearance.",
+    "category": "css",
+    "featuresUsed": [
+      "Masks"
+    ],
+    "tokenCount": 1106
+  },
+  {
+    "id": "animate-to-intrinsic-sizes",
+    "description": "Smoothly animate interactive components (like accordions, menus, and expanding cards) to and from their natural dimensions.",
+    "category": "css-layout",
+    "featuresUsed": [
+      "calc-size()",
+      "interpolate-size"
+    ],
+    "tokenCount": 1538
+  },
+  {
+    "id": "calculate-with-intrinsic-sizes",
+    "description": "Calculate the size of an element based on its intrinsic size, while ensuring it fits within given design constraints.",
+    "category": "css-layout",
+    "featuresUsed": [
+      "calc-size()",
+      "interpolate-size"
+    ],
+    "tokenCount": 2682
+  },
+  {
     "id": "css-layout",
     "description": "Modern CSS layouts such as flexbox, grid, subgrid, container queries, anchor positioning, and intrinsic sizing. Use this skill when architecting responsive UI components or page layouts.",
     "category": "css-layout",
     "featuresUsed": [],
-    "tokenCount": 5588
+    "tokenCount": 5748
+  },
+  {
+    "id": "design-token-reactivity",
+    "description": "Define higher-order design tokens, like density modes (compact, comfortable, spacious) or themes and have descendant components react to changes directly and in component-appropriate ways.",
+    "category": "css-layout",
+    "featuresUsed": [
+      "Container style queries"
+    ],
+    "tokenCount": 1601
+  },
+  {
+    "id": "fluid-scaling",
+    "description": "Scale items like font size, spacing, and media sizes smoothly based on the parent container's size rather than using fixed breakpoints",
+    "category": "css-layout",
+    "featuresUsed": [
+      "Container queries"
+    ],
+    "tokenCount": 783
+  },
+  {
+    "id": "overflow-clipping-control",
+    "description": "Adjust the visible clipping boundary of an element to align with the content edge, padding edge, or border edge—or a specified offset from any of these—offering finer-grained control over how content is clipped.",
+    "category": "css-layout",
+    "featuresUsed": [
+      "overflow: clip",
+      "overflow-clip-margin"
+    ],
+    "tokenCount": 2159
+  },
+  {
+    "id": "size-aware-styling",
+    "description": "Build a component whose styles can be conditionally dependent on its own width or height, rather than the width or height of the viewport. For example a card component that can change its layouts depending on how large it is, or a call-to-action button that can conditionally display helper text based on its width.",
+    "category": "css-layout",
+    "featuresUsed": [
+      "Container queries"
+    ],
+    "tokenCount": 731
+  },
+  {
+    "id": "calculate-event-differentials",
+    "description": "Calculate the duration and time remaining between dates and times.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 1314
+  },
+  {
+    "id": "capture-location-agnostic-data",
+    "description": "Record chronological data that should not change based on a user's location, such as birthdates, recurring alarms, or national holidays.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 1000
+  },
+  {
+    "id": "coordinate-global-events",
+    "description": "Schedule future meetings or events by explicitly binding them to a geographical IANA time zone so that event times remain accurate regardless of Daylight Saving Time (DST) transitions, \"skipped\" or \"repeated\" hours during clock changes.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 989
+  },
+  {
+    "id": "format-human-readable-durations",
+    "description": "Present elapsed time or durations to users in a readable, localized format, with the flexibility to display either detailed unit breakdowns (e.g., \"1 hour and 30 minutes\") or total unit counts (e.g., \"90 minutes\") depending on context.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal",
+      "Intl.DurationFormat"
+    ],
+    "tokenCount": 1223
+  },
+  {
+    "id": "manage-recurring-intervals",
+    "description": "Calculate recurring intervals for subscription billings or payroll cycles, automatically adjusting for edge cases such as month-end transitions (e.g., adding one month to January 31st) to ensure accurate period calculations.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 995
+  },
+  {
+    "id": "model-partial-time-concepts",
+    "description": "Model date and time concepts that inherently lack a standard component (such as a specific year, day, or date) without using arbitrary placeholder values that introduce calculation errors.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 1186
+  },
+  {
+    "id": "stabilize-reactive-state",
+    "description": "Manage task deadlines or schedules in data-driven views without unexpected side effects from shared mutable state.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 927
+  },
+  {
+    "id": "support-global-calendar-systems",
+    "description": "Display and calculate dates in non-Gregorian calendar systems (e.g., Islamic, Hebrew, or Chinese) accurately for international users.",
+    "category": "datetime",
+    "featuresUsed": [
+      "Temporal"
+    ],
+    "tokenCount": 1503
   },
   {
     "id": "animated-select-picker",
@@ -90,7 +393,7 @@
     "featuresUsed": [
       ":autofill"
     ],
-    "tokenCount": 1028
+    "tokenCount": 1030
   },
   {
     "id": "autofill-highlight-inputs",
@@ -110,7 +413,7 @@
       "Email, telephone, and URL <input> types",
       "inputmode"
     ],
-    "tokenCount": 2239
+    "tokenCount": 2241
   },
   {
     "id": "autofill-sign-in-form",
@@ -120,7 +423,7 @@
       "Email, telephone, and URL <input> types",
       "inputmode"
     ],
-    "tokenCount": 2426
+    "tokenCount": 2430
   },
   {
     "id": "autofill-sign-up-form",
@@ -130,7 +433,7 @@
       "Email, telephone, and URL <input> types",
       "inputmode"
     ],
-    "tokenCount": 2684
+    "tokenCount": 2688
   },
   {
     "id": "brand-consistent-forms",
@@ -139,7 +442,7 @@
     "featuresUsed": [
       "accent-color"
     ],
-    "tokenCount": 2455
+    "tokenCount": 2457
   },
   {
     "id": "branded-select-styling",
@@ -212,11 +515,268 @@
     "tokenCount": 2556
   },
   {
+    "id": "custom-button-actions",
+    "description": "Declaratively connect a button to any element to trigger custom, application-specific actions using declarative button commands, invoker commands, button commands, custom commands, or declarative toggle actions.",
+    "category": "html",
+    "featuresUsed": [
+      "Invoker commands"
+    ],
+    "tokenCount": 2090
+  },
+  {
     "id": "html",
     "description": "Action-oriented guidelines for modern HTML architecture, semantics, native interactive APIs (Dialog, Popover, Details), focus management, and resource prioritization. Use this guide when structuring web documents, implementing native overlays, or optimizing resource loading order.",
     "category": "html",
     "featuresUsed": [],
-    "tokenCount": 5560
+    "tokenCount": 5584
+  },
+  {
+    "id": "move-dom-element-without-losing-state",
+    "description": "Move or reparent a DOM element without losing important element state, such as interactivity states (:focus/:active), `<iframe>` loading state, animation/transition state, etc",
+    "category": "html",
+    "featuresUsed": [
+      "moveBefore()"
+    ],
+    "tokenCount": 707
+  },
+  {
+    "id": "persistent-top-layer-ui",
+    "description": "Keep a modal dialog, fullscreen element, or native popover visibly open and functionally active when its underlying DOM node is moved or reparented in the DOM.",
+    "category": "html",
+    "featuresUsed": [
+      "moveBefore()"
+    ],
+    "tokenCount": 690
+  },
+  {
+    "id": "search-hidden-content",
+    "description": "Hide content from view using patterns such as accordions, tabs, and \"Read more\" sections, while ensuring the hidden text reveals itself during native \"Find in page\" searches, allows search engine indexing, supports URL fragment deep links, and maintains ARIA accessibility.",
+    "category": "html",
+    "featuresUsed": [
+      "<details>",
+      "Mutually exclusive <details> elements",
+      "hidden=\"until-found\""
+    ],
+    "tokenCount": 1810
+  },
+  {
+    "id": "anchor-positioning-tab-underline",
+    "description": "Transition an element seamlessly between two target element positions. For example, moving a selected tab underline between the previously selected tab and the currently selected tab.",
+    "category": "motion",
+    "featuresUsed": [
+      "Anchor positioning",
+      "prefers-reduced-motion media query"
+    ],
+    "tokenCount": 800
+  },
+  {
+    "id": "animate-element-entry-exit",
+    "description": "Smoothly hide/show elements as they are added/removed from the DOM or as their display values are toggled.",
+    "category": "motion",
+    "featuresUsed": [
+      "@starting-style",
+      "transition-behavior"
+    ],
+    "tokenCount": 1408
+  },
+  {
+    "id": "consistent-cross-document-transitions",
+    "description": "Ensure critical page state is loaded and stable before initiating a cross-document view transition. This means critical CSS styles are loaded and applied, critical JavaScript is loaded and run, and the HTML visible for the user's initial view of the page has been parsed before the transition runs.",
+    "category": "motion",
+    "featuresUsed": [
+      "blocking=\"render\"",
+      "<link rel=\"expect\">",
+      "Cross-document view transitions"
+    ],
+    "tokenCount": 3086
+  },
+  {
+    "id": "cross-document-transitions",
+    "description": "Create smooth, seamless transitions between full page navigations, such as cross-fades, custom reveal effects, or morphing of content from one page to the next.",
+    "category": "motion",
+    "featuresUsed": [
+      "View transitions",
+      "Cross-document view transitions",
+      "Navigation API"
+    ],
+    "tokenCount": 1167
+  },
+  {
+    "id": "directional-navigation-transitions",
+    "description": "Animate visual state changes to reflect the direction of a user's navigational flow, such as sliding new content in from the right when advancing forward or from the left when returning to a previous screen.",
+    "category": "motion",
+    "featuresUsed": [
+      "View transitions",
+      "Active view transition"
+    ],
+    "tokenCount": 1287
+  },
+  {
+    "id": "dynamic-sibling-animations",
+    "description": "Stagger animation or transition timing across sibling elements so each one starts after a computed delay based on its position in the sibling list.",
+    "category": "motion",
+    "featuresUsed": [
+      "sibling-count() and sibling-index()"
+    ],
+    "tokenCount": 776
+  },
+  {
+    "id": "group-element-transitions",
+    "description": "Transition a group of similar elements simultaneously using the same transition logic, such as removing a product from a shopping cart and having all the other products animate into their new positions.",
+    "category": "motion",
+    "featuresUsed": [
+      "View transitions",
+      "view-transition-class"
+    ],
+    "tokenCount": 1337
+  },
+  {
+    "id": "individual-transform-properties",
+    "description": "Animate or override individual CSS transform properties (e.g. translate, rotate, scale) independently of other transform properties on a single element.",
+    "category": "motion",
+    "featuresUsed": [
+      "Individual transform properties"
+    ],
+    "tokenCount": 883
+  },
+  {
+    "id": "physics-based-easing",
+    "description": "Create custom, physics-based animation and transition effects, like bounce and spring, that feel more natural and engaging than traditional easing curves.",
+    "category": "motion",
+    "featuresUsed": [
+      "linear() easing"
+    ],
+    "tokenCount": 1868
+  },
+  {
+    "id": "same-document-transitions",
+    "description": "Visually connect persisting elements across different page states or navigations in a Single Page Application (SPA) (e.g. expanding a product thumbnail into a full-bleed hero image) by smoothly morphing their size, position, or other styling properties.",
+    "category": "motion",
+    "featuresUsed": [
+      "View transitions"
+    ],
+    "tokenCount": 2134
+  },
+  {
+    "id": "animate-to-from-top-layer",
+    "description": "Animate elements such as dialogs, popovers, and tooltips as they're entering/exiting the top layer.",
+    "category": "overlays",
+    "featuresUsed": [
+      "::backdrop",
+      "<dialog>",
+      "overlay",
+      "Popover",
+      "@starting-style",
+      "transition-behavior"
+    ],
+    "tokenCount": 1541
+  },
+  {
+    "id": "declarative-dialog-popover-control",
+    "description": "Toggle the visibility of a dialog or popover from a button without writing JavaScript.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Invoker commands",
+      "Popover",
+      "<dialog>"
+    ],
+    "tokenCount": 2948
+  },
+  {
+    "id": "interest-triggered-action-previews",
+    "description": "Show a live preview of a button's effect when a user signals interest (e.g. hovering, focusing, or long-pressing) but before they commit to clicking.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Interest invokers"
+    ],
+    "tokenCount": 1111
+  },
+  {
+    "id": "interest-triggered-tooltips",
+    "description": "Show a tooltip or supplemental information when a user hovers over, focuses on, or long-presses an interactive element, without requiring a click.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Interest invokers",
+      "Popover",
+      "popover=\"hint\"",
+      "Anchor positioning"
+    ],
+    "tokenCount": 1901
+  },
+  {
+    "id": "light-dismiss-a-dialog",
+    "description": "Create a modal dialog that can be closed via light dismiss (i.e. clicking or tapping outside of the dialog)",
+    "category": "overlays",
+    "featuresUsed": [
+      "<dialog closedby>"
+    ],
+    "tokenCount": 1085
+  },
+  {
+    "id": "navigation-drawer",
+    "description": "Create a navigation drawer component that, when triggered from a menu button, slides in from the side overlayed on top of existing page content, and slides out when dismissed (by swiping away, tapping outside, or pressing escape).",
+    "category": "overlays",
+    "featuresUsed": [
+      "inert",
+      "Intersection observer",
+      "Popover",
+      "Registered custom properties",
+      "Scroll-driven animations",
+      "scroll-initial-target",
+      "Scroll snap"
+    ],
+    "tokenCount": 4317
+  },
+  {
+    "id": "persistent-app-tours",
+    "description": "Create persistent onboarding walkthroughs using tethered native overlays that stay open during user interaction.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Popover",
+      "Anchor positioning"
+    ],
+    "tokenCount": 1174
+  },
+  {
+    "id": "persistent-toast-notifications",
+    "description": "Create non-intrusive toast and overlay notifications for persistent, stackable messaging and state communication.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Popover",
+      "Anchor positioning",
+      "sibling-count() and sibling-index()",
+      "transition-behavior"
+    ],
+    "tokenCount": 509
+  },
+  {
+    "id": "platform-controls-dismiss-dialog",
+    "description": "Create a modal dialog that can be closed via standard platform-specific user actions, such as pressing the `Esc` key on desktop platforms, or a \"back\" or \"dismiss\" gesture on mobile platforms",
+    "category": "overlays",
+    "featuresUsed": [
+      "<dialog closedby>"
+    ],
+    "tokenCount": 719
+  },
+  {
+    "id": "position-aware-tooltips",
+    "description": "Build tooltips and popovers with directional arrows (or other visual styling) that automatically point the correct way when the element flips to a fallback position.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Anchor position container queries",
+      "Popover"
+    ],
+    "tokenCount": 1648
+  },
+  {
+    "id": "resilient-context-menus-and-nested-dropdowns",
+    "description": "Build accessible, responsive menus, tooltips, dropdowns, or contextual overlays that must be tethered to specific UI elements, guaranteeing that the overlay automatically repositions itself (e.g., flipping axes) when it encounters viewport edges, ensuring it never gets cut off.",
+    "category": "overlays",
+    "featuresUsed": [
+      "Anchor positioning",
+      "Popover"
+    ],
+    "tokenCount": 1317
   },
   {
     "id": "passkey-authentication",
@@ -272,7 +832,7 @@
     "description": "Comprehensive orientation and cross-cutting principles for implementing WebAuthn and Passkeys in web applications. Use this guide when handling passkey registration, authentication, management, or reauthentication.",
     "category": "passkeys",
     "featuresUsed": [],
-    "tokenCount": 1127
+    "tokenCount": 1213
   },
   {
     "id": "batch-analytics-events",
@@ -318,7 +878,7 @@
     "featuresUsed": [
       "content-visibility"
     ],
-    "tokenCount": 1510
+    "tokenCount": 1530
   },
   {
     "id": "defer-work-until-scroll-ends",
@@ -328,6 +888,15 @@
       "scrollend"
     ],
     "tokenCount": 907
+  },
+  {
+    "id": "deliver-optimized-decorative-images",
+    "description": "Deliver optimized decorative images (such as backgrounds, UI icons, or complex masks) by simultaneously providing next-generation image formats (like AVIF or WebP) alongside multiple pixel densities (like 1x and 2x) so the browser can dynamically negotiate the best combination of file size and visual quality for the user's device capabilities.",
+    "category": "performance",
+    "featuresUsed": [
+      "image-set()"
+    ],
+    "tokenCount": 856
   },
   {
     "id": "deprioritize-background-fetches",
@@ -366,6 +935,15 @@
       "content-visibility"
     ],
     "tokenCount": 860
+  },
+  {
+    "id": "flicker-free-client-side-ab-testing",
+    "description": "Deliver and render A/B tests, multi-variate tests, or other experiments using client-side JavaScript to alter or inject HTML, CSS, and JavaScript without the original content showing first before flickering or flashing to show the experiment content.",
+    "category": "performance",
+    "featuresUsed": [
+      "blocking=\"render\""
+    ],
+    "tokenCount": 2147
   },
   {
     "id": "full-session-analytics",
@@ -489,118 +1067,9 @@
     "tokenCount": 3108
   },
   {
-    "id": "security",
-    "description": "Preventative security guidelines for web developers (XSS, CSP, Cookies, Cross-Origin Isolation). Use this skill to guide the process of auditing, testing, and deploying security policies safely.",
-    "category": "security",
-    "featuresUsed": [],
-    "tokenCount": 6823
-  },
-  {
-    "id": "accordion",
-    "description": "Build modern, accessible, and high-performance accordions using native HTML elements, CSS height transitions, and proper visual context.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "<details>",
-      "calc-size()",
-      "interpolate-size"
-    ],
-    "tokenCount": 2653
-  },
-  {
-    "id": "adapt-scrollbar-to-contrast-preferences",
-    "description": "Enhance scrollbar visibility for users who prefer high-contrast interfaces",
-    "category": "user-experience",
-    "featuresUsed": [
-      "scrollbar-color",
-      "prefers-contrast media query"
-    ],
-    "tokenCount": 937
-  },
-  {
-    "id": "anchor-positioning-tab-underline",
-    "description": "Transition an element seamlessly between two target element positions. For example, moving a selected tab underline between the previously selected tab and the currently selected tab.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Anchor positioning",
-      "prefers-reduced-motion media query"
-    ],
-    "tokenCount": 800
-  },
-  {
-    "id": "animate-element-entry-exit",
-    "description": "Smoothly hide/show elements as they are added/removed from the DOM or as their display values are toggled.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "@starting-style",
-      "transition-behavior"
-    ],
-    "tokenCount": 1408
-  },
-  {
-    "id": "animate-to-from-top-layer",
-    "description": "Animate elements such as dialogs, popovers, and tooltips as they're entering/exiting the top layer.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "::backdrop",
-      "<dialog>",
-      "overlay",
-      "Popover",
-      "@starting-style",
-      "transition-behavior"
-    ],
-    "tokenCount": 1541
-  },
-  {
-    "id": "animate-to-intrinsic-sizes",
-    "description": "Smoothly animate interactive components (like accordions, menus, and expanding cards) to and from their natural dimensions.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "calc-size()",
-      "interpolate-size"
-    ],
-    "tokenCount": 1538
-  },
-  {
-    "id": "apply-webgl-shaders",
-    "description": "Apply custom visual effects with WebGL shaders to HTML content.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "HTML in canvas"
-    ],
-    "tokenCount": 2886
-  },
-  {
-    "id": "calculate-event-differentials",
-    "description": "Calculate the duration and time remaining between dates and times.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 1314
-  },
-  {
-    "id": "calculate-with-intrinsic-sizes",
-    "description": "Calculate the size of an element based on its intrinsic size, while ensuring it fits within given design constraints.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "calc-size()",
-      "interpolate-size"
-    ],
-    "tokenCount": 2682
-  },
-  {
-    "id": "capture-location-agnostic-data",
-    "description": "Record chronological data that should not change based on a user's location, such as birthdates, recurring alarms, or national holidays.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 1000
-  },
-  {
     "id": "carousel-slide-effects",
     "description": "Create a carousel of slides with images or other visual elements, where each slide animates as they enter/center/exit their scroller. For example, the slides may fade-in/fade-out, rotate, get bigger or smaller, etc.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll-driven animations",
       "Scroll snap"
@@ -610,438 +1079,25 @@
   {
     "id": "carousel-snap-highlights",
     "description": "Visually highlight the currently snapped non-interactive item in scroll-snapping carousels, galleries, or full-page swipe experiences. For example, expanding a card when snapped, or revealing hidden content.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Container scroll-state queries"
     ],
     "tokenCount": 1442
   },
   {
-    "id": "child-state-based-styling",
-    "description": "Build a component that changes its styling based on the state of one of its child elements. For example, a component that renders in light or dark mode based on whether a theme toggle is checked (or not).",
-    "category": "user-experience",
-    "featuresUsed": [
-      ":has()",
-      ":not()"
-    ],
-    "tokenCount": 1423
-  },
-  {
-    "id": "complex-shapes",
-    "description": "Clip elements and their content to any free-form shape, like a symbol, brush stroke, or organic texture for more expressive designs.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Masks",
-      "SVG"
-    ],
-    "tokenCount": 1041
-  },
-  {
-    "id": "component-specific-light-dark-theme",
-    "description": "Force certain elements to be in light mode or dark mode (e.g. code blocks, media players, etc) independently of the page's color-scheme.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "color-scheme",
-      "light-dark()"
-    ],
-    "tokenCount": 2519
-  },
-  {
-    "id": "consistent-cross-document-transitions",
-    "description": "Ensure critical page state is loaded and stable before initiating a cross-document view transition. This means critical CSS styles are loaded and applied, critical JavaScript is loaded and run, and the HTML visible for the user's initial view of the page has been parsed before the transition runs.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "blocking=\"render\"",
-      "<link rel=\"expect\">",
-      "Cross-document view transitions"
-    ],
-    "tokenCount": 3086
-  },
-  {
-    "id": "content-based-styling",
-    "description": "Build a component that changes its layout based on whether it contains specific child elements (or not). For example, if the component contains an image, use a multi-column layout, otherwise default to a single-column layout.",
-    "category": "user-experience",
-    "featuresUsed": [
-      ":has()",
-      ":not()"
-    ],
-    "tokenCount": 1474
-  },
-  {
-    "id": "coordinate-global-events",
-    "description": "Schedule future meetings or events by explicitly binding them to a geographical IANA time zone so that event times remain accurate regardless of Daylight Saving Time (DST) transitions, \"skipped\" or \"repeated\" hours during clock changes.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 989
-  },
-  {
-    "id": "cross-document-transitions",
-    "description": "Create smooth, seamless transitions between full page navigations, such as cross-fades, custom reveal effects, or morphing of content from one page to the next.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "View transitions",
-      "Cross-document view transitions",
-      "Navigation API"
-    ],
-    "tokenCount": 1167
-  },
-  {
-    "id": "customize-scrollbar-color-and-thickness",
-    "description": "Customize the color or thickness of a scrollbar",
-    "category": "user-experience",
-    "featuresUsed": [
-      "scrollbar-color",
-      "scrollbar-width"
-    ],
-    "tokenCount": 681
-  },
-  {
-    "id": "dark-mode",
-    "description": "Implement dark mode support in a way that respects the user's light/dark theme preference and adapts browser UI (e.g. scrollbars, form controls, etc)",
-    "category": "user-experience",
-    "featuresUsed": [
-      "color-scheme",
-      "prefers-color-scheme media query",
-      "light-dark()",
-      "accent-color"
-    ],
-    "tokenCount": 4102
-  },
-  {
-    "id": "declarative-button-actions",
-    "description": "Declaratively connect a button to any element to trigger custom, application-specific actions using declarative button commands, invoker commands, button commands, custom commands, or declarative toggle actions.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Invoker commands"
-    ],
-    "tokenCount": 1551
-  },
-  {
-    "id": "declarative-dialog-popover-control",
-    "description": "Toggle the visibility of a dialog or popover from a button without writing JavaScript.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Invoker commands",
-      "Popover",
-      "<dialog>"
-    ],
-    "tokenCount": 2684
-  },
-  {
-    "id": "deliver-optimized-decorative-images",
-    "description": "Deliver optimized decorative images (such as backgrounds, UI icons, or complex masks) by simultaneously providing next-generation image formats (like AVIF or WebP) alongside multiple pixel densities (like 1x and 2x) so the browser can dynamically negotiate the best combination of file size and visual quality for the user's device capabilities.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "image-set()"
-    ],
-    "tokenCount": 852
-  },
-  {
-    "id": "design-token-reactivity",
-    "description": "Define higher-order design tokens, like density modes (compact, comfortable, spacious) or themes and have descendant components react to changes directly and in component-appropriate ways.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Container style queries"
-    ],
-    "tokenCount": 1585
-  },
-  {
-    "id": "directional-navigation-transitions",
-    "description": "Animate visual state changes to reflect the direction of a user's navigational flow, such as sliding new content in from the right when advancing forward or from the left when returning to a previous screen.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "View transitions",
-      "Active view transition"
-    ],
-    "tokenCount": 1287
-  },
-  {
-    "id": "dynamic-sibling-animations",
-    "description": "Stagger animation or transition timing across sibling elements so each one starts after a computed delay based on its position in the sibling list.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "sibling-count() and sibling-index()"
-    ],
-    "tokenCount": 776
-  },
-  {
-    "id": "dynamic-sibling-styling",
-    "description": "Create dynamic visual spectrums or layout arrangements that automatically adapt to the number of elements in a group.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "sibling-count() and sibling-index()",
-      "sin(), cos(), tan(), asin(), acos(), atan(), and atan2() (CSS)"
-    ],
-    "tokenCount": 1045
-  },
-  {
-    "id": "export-html-media-from-canvas",
-    "description": "Capture and export dynamic HTML content as images or video frames from within canvas.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "HTML in canvas"
-    ],
-    "tokenCount": 3185
-  },
-  {
-    "id": "expose-canvas-content-to-browser-features",
-    "description": "Expose content rendered in a canvas to browser features like assistive technologies, translation, or reading mode.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "HTML in canvas"
-    ],
-    "tokenCount": 4304
-  },
-  {
-    "id": "flicker-free-client-side-ab-testing",
-    "description": "Deliver and render A/B tests, multi-variate tests, or other experiments using client-side JavaScript to alter or inject HTML, CSS, and JavaScript without the original content showing first before flickering or flashing to show the experiment content.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "blocking=\"render\""
-    ],
-    "tokenCount": 2147
-  },
-  {
-    "id": "fluid-scaling",
-    "description": "Scale items like font size, spacing, and media sizes smoothly based on the parent container's size rather than using fixed breakpoints",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Container queries"
-    ],
-    "tokenCount": 783
-  },
-  {
-    "id": "format-human-readable-durations",
-    "description": "Present elapsed time or durations to users in a readable, localized format, with the flexibility to display either detailed unit breakdowns (e.g., \"1 hour and 30 minutes\") or total unit counts (e.g., \"90 minutes\") depending on context.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal",
-      "Intl.DurationFormat"
-    ],
-    "tokenCount": 1223
-  },
-  {
-    "id": "group-element-transitions",
-    "description": "Transition a group of similar elements simultaneously using the same transition logic, such as removing a product from a shopping cart and having all the other products animate into their new positions.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "View transitions",
-      "view-transition-class"
-    ],
-    "tokenCount": 1337
-  },
-  {
-    "id": "improve-text-layout-and-legibility",
-    "description": "Improve the layout and legibility of short standalone text content, such as headings no longer than a few lines, by enabling the browser to apply evenly balanced line breaks when wrapping text.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "text-wrap: balance",
-      "text-wrap: pretty"
-    ],
-    "tokenCount": 1307
-  },
-  {
-    "id": "individual-transform-properties",
-    "description": "Animate or override individual CSS transform properties (e.g. translate, rotate, scale) independently of other transform properties on a single element.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Individual transform properties"
-    ],
-    "tokenCount": 883
-  },
-  {
-    "id": "interactive-content-in-3d-scenes",
-    "description": "Integrate interactive HTML elements into a 3D scene.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "HTML in canvas"
-    ],
-    "tokenCount": 4015
-  },
-  {
-    "id": "interactive-content-reveal",
-    "description": "Create interactive reveal effects, such as a spotlight that follows the user's pointer to uncover details within an image or UI section.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Masks",
-      "Registered custom properties"
-    ],
-    "tokenCount": 1365
-  },
-  {
-    "id": "interest-triggered-action-previews",
-    "description": "Show a live preview of a button's effect when a user signals interest (e.g. hovering, focusing, or long-pressing) but before they commit to clicking.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Interest invokers"
-    ],
-    "tokenCount": 1111
-  },
-  {
-    "id": "interest-triggered-tooltips",
-    "description": "Show a tooltip or supplemental information when a user hovers over, focuses on, or long-presses an interactive element, without requiring a click.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Interest invokers",
-      "Popover",
-      "popover=\"hint\"",
-      "Anchor positioning"
-    ],
-    "tokenCount": 1901
-  },
-  {
-    "id": "light-dismiss-a-dialog",
-    "description": "Create a modal dialog that can be closed via light dismiss (i.e. clicking or tapping outside of the dialog)",
-    "category": "user-experience",
-    "featuresUsed": [
-      "<dialog closedby>"
-    ],
-    "tokenCount": 1085
-  },
-  {
-    "id": "manage-recurring-intervals",
-    "description": "Calculate recurring intervals for subscription billings or payroll cycles, automatically adjusting for edge cases such as month-end transitions (e.g., adding one month to January 31st) to ensure accurate period calculations.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 995
-  },
-  {
-    "id": "model-partial-time-concepts",
-    "description": "Model date and time concepts that inherently lack a standard component (such as a specific year, day, or date) without using arbitrary placeholder values that introduce calculation errors.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 1186
-  },
-  {
-    "id": "move-dom-element-without-losing-state",
-    "description": "Move or reparent a DOM element without losing important element state, such as interactivity states (:focus/:active), <iframe> loading state, animation/transition state, etc",
-    "category": "user-experience",
-    "featuresUsed": [
-      "moveBefore()"
-    ],
-    "tokenCount": 707
-  },
-  {
-    "id": "navigation-drawer",
-    "description": "Create a navigation drawer component that, when triggered from a menu button, slides in from the side overlayed on top of existing page content, and slides out when dismissed (by swiping away, tapping outside, or pressing escape).",
-    "category": "user-experience",
-    "featuresUsed": [
-      "inert",
-      "Intersection observer",
-      "Popover",
-      "Registered custom properties",
-      "Scroll-driven animations",
-      "scroll-initial-target",
-      "Scroll snap"
-    ],
-    "tokenCount": 4317
-  },
-  {
-    "id": "overflow-clipping-control",
-    "description": "Adjust the visible clipping boundary of an element to align with the content edge, padding edge, or border edge—or a specified offset from any of these—offering finer-grained control over how content is clipped.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "overflow: clip",
-      "overflow-clip-margin"
-    ],
-    "tokenCount": 2159
-  },
-  {
     "id": "parallax-scroll-effects",
     "description": "Create scroll-based effects (such as parallax) where foreground and background layers move at different rates, creating a sense of depth as the user scrolls.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll-driven animations"
     ],
     "tokenCount": 2403
   },
   {
-    "id": "persistent-app-tours",
-    "description": "Create persistent onboarding walkthroughs using tethered native overlays that stay open during user interaction.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Popover",
-      "Anchor positioning"
-    ],
-    "tokenCount": 1174
-  },
-  {
-    "id": "persistent-toast-notifications",
-    "description": "Create non-intrusive toast and overlay notifications for persistent, stackable messaging and state communication.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Popover",
-      "Anchor positioning",
-      "sibling-count() and sibling-index()",
-      "transition-behavior"
-    ],
-    "tokenCount": 509
-  },
-  {
-    "id": "persistent-top-layer-ui",
-    "description": "Keep a modal dialog, fullscreen element, or native popover visibly open and functionally active when its underlying DOM node is moved or reparented in the DOM.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "moveBefore()"
-    ],
-    "tokenCount": 690
-  },
-  {
-    "id": "physics-based-easing",
-    "description": "Create custom, physics-based animation and transition effects, like bounce and spring, that feel more natural and engaging than traditional easing curves.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "linear() easing"
-    ],
-    "tokenCount": 1868
-  },
-  {
-    "id": "platform-controls-dismiss-dialog",
-    "description": "Create a modal dialog that can be closed via standard platform-specific user actions, such as pressing the `Esc` key on desktop platforms, or a \"back\" or \"dismiss\" gesture on mobile platforms",
-    "category": "user-experience",
-    "featuresUsed": [
-      "<dialog closedby>"
-    ],
-    "tokenCount": 719
-  },
-  {
-    "id": "position-aware-tooltips",
-    "description": "Build tooltips and popovers with directional arrows (or other visual styling) that automatically point the correct way when the element flips to a fallback position.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Anchor position container queries",
-      "Popover"
-    ],
-    "tokenCount": 1648
-  },
-  {
-    "id": "precise-text-alignment",
-    "description": "Achieve precise vertical alignment with text of any font. For example, exactly equal visual padding above and below text, or aligning text perfectly flush with adjacent icons or images.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "text-box"
-    ],
-    "tokenCount": 1216
-  },
-  {
-    "id": "prevent-text-wrapping",
-    "description": "Ensure the browser does not insert line breaks into text and will allow text to overflow its container.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "text-wrap"
-    ],
-    "tokenCount": 682
-  },
-  {
     "id": "pull-to-reveal",
     "description": "Build a pull-to-reveal feature that would enable the user to pull down on the screen to reveal more content, like a search bar.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "scroll-initial-target",
       "Scroll snap"
@@ -1049,37 +1105,9 @@
     "tokenCount": 1202
   },
   {
-    "id": "reduce-style-repetition",
-    "description": "Reduce excessive style repetition by encapsulating complex or dynamic styling logic into reusable functions (such as a function that computes a gradient based on a set of input parameters).",
-    "category": "user-experience",
-    "featuresUsed": [
-      "@function"
-    ],
-    "tokenCount": 1080
-  },
-  {
-    "id": "resilient-context-menus-and-nested-dropdowns",
-    "description": "Build accessible, responsive menus, tooltips, dropdowns, or contextual overlays that must be tethered to specific UI elements, guaranteeing that the overlay automatically repositions itself (e.g., flipping axes) when it encounters viewport edges, ensuring it never gets cut off.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Anchor positioning",
-      "Popover"
-    ],
-    "tokenCount": 1317
-  },
-  {
-    "id": "same-document-transitions",
-    "description": "Visually connect persisting elements across different page states or navigations in a Single Page Application (SPA) (e.g. expanding a product thumbnail into a full-bleed hero image) by smoothly morphing their size, position, or other styling properties.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "View transitions"
-    ],
-    "tokenCount": 2134
-  },
-  {
     "id": "scroll-entry-exit-effects",
     "description": "Create fade-in, scale-up, or other complex reveal-type effects on elements as they enter and exit the scrollport (or viewport) while the user is scrolling.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll-driven animations"
     ],
@@ -1088,7 +1116,7 @@
   {
     "id": "scroll-position-aware-elements",
     "description": "Build floating buttons or widgets (back-to-top, scroll-to-bottom, chat launchers, etc.) that appear and disappear based on whether the user has scrolled at all.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Container scroll-state queries"
     ],
@@ -1097,7 +1125,7 @@
   {
     "id": "scroll-progress-indicator",
     "description": "Create a scroll progress bar, stepped progress tracker, or any visual affordance that communicates how far through a page or section the user has scrolled.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll-driven animations"
     ],
@@ -1106,7 +1134,7 @@
   {
     "id": "scroll-snap-realtime-feedback",
     "description": "Provide real-time visual feedback in linked UI elements while a user scrolls through snap-aligned content, before the scroll gesture completes.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll snap events",
       "Scroll snap"
@@ -1116,7 +1144,7 @@
   {
     "id": "scroll-snap-state-sync",
     "description": "Synchronize navigation indicators, linked content panels, and analytics tracking with the actively snapped item in a scrollable container.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll snap events",
       "Scroll snap"
@@ -1126,7 +1154,7 @@
   {
     "id": "scroll-target-on-load",
     "description": "Build a scrollable list of elements (e.g. a carousel of images or a chat conversation thread) that can be displayed with a particular element scrolled into view on the initial render.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "scroll-initial-target",
       "scrollIntoView()"
@@ -1136,7 +1164,7 @@
   {
     "id": "scrollability-affordance-hints",
     "description": "Build scroll-shadow overlays, gradient fades, or directional arrow indicators that appear only when there's actually more content to scroll to in that direction.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Container scroll-state queries"
     ],
@@ -1145,72 +1173,25 @@
   {
     "id": "scrollytelling",
     "description": "Animate visual properties on a target element — such as fading a backdrop, shifting a background color, or to create scrollytelling experiences — driven entirely by the scrollport position of a completely different element.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll-driven animations"
     ],
     "tokenCount": 2367
   },
   {
-    "id": "search-hidden-content",
-    "description": "Hide content from view using patterns such as accordions, tabs, and \"Read more\" sections, while ensuring the hidden text reveals itself during native \"Find in page\" searches, allows search engine indexing, supports URL fragment deep links, and maintains ARIA accessibility.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "<details>",
-      "Mutually exclusive <details> elements",
-      "hidden=\"until-found\""
-    ],
-    "tokenCount": 1810
-  },
-  {
-    "id": "shaped-cutouts",
-    "description": "Combine multiple shapes to create complex cutouts or 'knockout' effects in elements, such as adding a notch to an element.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Masks"
-    ],
-    "tokenCount": 2313
-  },
-  {
     "id": "shrinking-header-on-scroll",
     "description": "Smoothly animate a fixed header or full-page cover on scroll to dynamically shrink, gain shadows, and transform its layout over a predefined scroll distance.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll-driven animations"
     ],
     "tokenCount": 1614
   },
   {
-    "id": "size-aware-styling",
-    "description": "Build a component whose styles can be conditionally dependent on its own width or height, rather than the width or height of the viewport. For example a card component that can change its layouts depending on how large it is, or a call-to-action button that can conditionally display helper text based on its width.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Container queries"
-    ],
-    "tokenCount": 731
-  },
-  {
-    "id": "soft-edge-content-fade",
-    "description": "Apply a transparency gradient to content edges to indicate further scrollable areas or to obscure payment-walled text.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Masks"
-    ],
-    "tokenCount": 672
-  },
-  {
-    "id": "stabilize-reactive-state",
-    "description": "Manage task deadlines or schedules in data-driven views without unexpected side effects from shared mutable state.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 927
-  },
-  {
     "id": "stack-drill-down",
     "description": "Build full-screen hierarchical navigation that lets users drill down into nested views and swipe or navigate back to return, with browser history kept in sync.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "inert",
       "Intersection observer",
@@ -1221,27 +1202,9 @@
     "tokenCount": 9083
   },
   {
-    "id": "style-parent-with-has",
-    "description": "Style parent elements of a form field (e.g. labels or fieldsets) when the field is invalid.",
-    "category": "user-experience",
-    "featuresUsed": [
-      ":user-valid and :user-invalid"
-    ],
-    "tokenCount": 1932
-  },
-  {
-    "id": "support-global-calendar-systems",
-    "description": "Display and calculate dates in non-Gregorian calendar systems (e.g., Islamic, Hebrew, or Chinese) accurately for international users.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Temporal"
-    ],
-    "tokenCount": 1503
-  },
-  {
     "id": "swipe-to-remove",
     "description": "Let users act on items in a list (remove, archive, mark as read, etc.) with a horizontal swipe gesture, so they can process entries quickly without tapping a separate control.",
-    "category": "user-experience",
+    "category": "scroll",
     "featuresUsed": [
       "Scroll snap",
       "scroll-initial-target",
@@ -1255,9 +1218,44 @@
     "tokenCount": 7299
   },
   {
+    "id": "security",
+    "description": "Preventative security guidelines for web developers (XSS, CSP, Cookies, Cross-Origin Isolation). Use this skill to guide the process of auditing, testing, and deploying security policies safely.",
+    "category": "security",
+    "featuresUsed": [],
+    "tokenCount": 6823
+  },
+  {
+    "id": "improve-text-layout-and-legibility",
+    "description": "Improve the layout and legibility of short standalone text content, such as headings no longer than a few lines, by enabling the browser to apply evenly balanced line breaks when wrapping text.",
+    "category": "typography",
+    "featuresUsed": [
+      "text-wrap: balance",
+      "text-wrap: pretty"
+    ],
+    "tokenCount": 1307
+  },
+  {
+    "id": "precise-text-alignment",
+    "description": "Achieve precise vertical alignment with text of any font. For example, exactly equal visual padding above and below text, or aligning text perfectly flush with adjacent icons or images.",
+    "category": "typography",
+    "featuresUsed": [
+      "text-box"
+    ],
+    "tokenCount": 1216
+  },
+  {
+    "id": "prevent-text-wrapping",
+    "description": "Ensure the browser does not insert line breaks into text and will allow text to overflow its container.",
+    "category": "typography",
+    "featuresUsed": [
+      "text-wrap"
+    ],
+    "tokenCount": 682
+  },
+  {
     "id": "visually-stable-font-fallbacks",
     "description": "Define font styles such that text remains readable and visually consistent in the event that there's a swap between the perferred font and one of the fallbacks (or vise versa).",
-    "category": "user-experience",
+    "category": "typography",
     "featuresUsed": [
       "font-size-adjust"
     ],
@@ -1266,20 +1264,11 @@
   {
     "id": "visually-stable-mixed-fonts",
     "description": "Define font styles such that text remains readable and visually consistent in situations where multiple fonts are used to render a single block of text.",
-    "category": "user-experience",
+    "category": "typography",
     "featuresUsed": [
       "font-size-adjust"
     ],
     "tokenCount": 772
-  },
-  {
-    "id": "visually-texture-content",
-    "description": "Apply realistic weathering and texture patterns to elements to give them an organic, aged, or physical material appearance.",
-    "category": "user-experience",
-    "featuresUsed": [
-      "Masks"
-    ],
-    "tokenCount": 1106
   },
   {
     "id": "agentic-forms",
@@ -1295,9 +1284,9 @@
     "description": "Programmatically register client-side JavaScript functions as tools for AI agents using the WebMCP Imperative API.",
     "category": "webmcp",
     "featuresUsed": [
-      "navigator.modelContext"
+      "document.modelContext"
     ],
-    "tokenCount": 1195
+    "tokenCount": 1197
   },
   {
     "id": "webmcp",

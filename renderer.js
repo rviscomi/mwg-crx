@@ -312,8 +312,6 @@ function renderOpportunities(container, list, filterTraining = false) {
     });
   }
 
-  // Bind interactive code tags for element highlights/inspections inside HTML/code blocks
-  bindInteractiveCodeTags(container);
 }
 
 function escapeHtml(str) {
