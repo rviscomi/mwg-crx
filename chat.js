@@ -992,12 +992,12 @@ function getFriendlyErrorMessage(err) {
   if (msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("experiencing high demand")) {
     let response = `Rawr! 🦖 The Gemini API is currently experiencing a massive meteor shower of demand (Error 503)! ☄️ Spikes in demand are usually temporary. Please try again in a few moments, or check back once the dust settles!`;
     
-    if (config.model === "gemini-3.5-flash") {
+    if (config.model === "gemini-3.6-flash") {
+      response += `\n\nWould you like to switch to a lower model like **Gemini 3.1 Flash Lite** to see if it has more availability?\n\n[⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
+    } else if (config.model === "gemini-3.5-flash") {
       response += `\n\nWould you like to switch to a lower model like **Gemini 3.1 Flash Lite** to see if it has more availability?\n\n[⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
     } else if (config.model === "gemini-3.1-pro-preview") {
-      response += `\n\nWould you like to switch to a faster model like **Gemini 3.5 Flash** or **Gemini 3.1 Flash Lite**?\n\n[⚙️ Switch model to Gemini 3.5 Flash](suggest:Switch model to Gemini 3.5 Flash) [⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
-    } else if (config.model === "gemini-3-flash-preview") {
-      response += `\n\nWould you like to switch to **Gemini 3.1 Flash Lite**?\n\n[⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
+      response += `\n\nWould you like to switch to a faster model like **Gemini 3.6 Flash**, **Gemini 3.5 Flash** or **Gemini 3.1 Flash Lite**?\n\n[⚙️ Switch model to Gemini 3.6 Flash](suggest:Switch model to Gemini 3.6 Flash) [⚙️ Switch model to Gemini 3.5 Flash](suggest:Switch model to Gemini 3.5 Flash) [⚙️ Switch model to Gemini 3.1 Flash Lite](suggest:Switch model to Gemini 3.1 Flash Lite)`;
     }
     
     return response;
@@ -1044,7 +1044,10 @@ async function handleSendChatMessage() {
     const targetModelName = message.substring("Switch model to ".length).trim();
     let modelValue = "";
     let modelLabel = "";
-    if (targetModelName.includes("3.5 Flash") || targetModelName.includes("gemini-3.5-flash")) {
+    if (targetModelName.includes("3.6 Flash") || targetModelName.includes("gemini-3.6-flash")) {
+      modelValue = "gemini-3.6-flash";
+      modelLabel = "Gemini 3.6 Flash";
+    } else if (targetModelName.includes("3.5 Flash") || targetModelName.includes("gemini-3.5-flash")) {
       modelValue = "gemini-3.5-flash";
       modelLabel = "Gemini 3.5 Flash";
     } else if (targetModelName.includes("3.1 Flash Lite") || targetModelName.includes("gemini-3.1-flash-lite")) {
@@ -1053,9 +1056,6 @@ async function handleSendChatMessage() {
     } else if (targetModelName.includes("3.1 Pro") || targetModelName.includes("gemini-3.1-pro-preview")) {
       modelValue = "gemini-3.1-pro-preview";
       modelLabel = "Gemini 3.1 Pro Preview";
-    } else if (targetModelName.includes("3 Flash Preview") || targetModelName.includes("gemini-3-flash-preview")) {
-      modelValue = "gemini-3-flash-preview";
-      modelLabel = "Gemini 3.0 Flash Preview";
     }
     
     if (modelValue) {
